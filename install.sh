@@ -2,8 +2,8 @@
 # Put Jungey TV on this computer, for your account: the jungey-tv command (which Jungey
 # uses to drive the TV), and Jungey TV in the app menu. No root needed.
 #
-#   apps/tv/install.sh              build and install
-#   apps/tv/install.sh --uninstall  take it away again (the TV's permission is kept)
+#   ./install.sh              build and install
+#   ./install.sh --uninstall  take it away again (the TV's permission is kept)
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
