@@ -3,10 +3,12 @@ package dev.suven.jungeytv;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.suven.jungeytv.tv.Catalog;
 import dev.suven.jungeytv.tv.Discovery;
 import dev.suven.jungeytv.tv.Keys;
 import dev.suven.jungeytv.tv.Remote;
 import dev.suven.jungeytv.tv.SamsungTv;
+import dev.suven.jungeytv.tv.Services;
 import dev.suven.jungeytv.tv.TvException;
 import dev.suven.jungeytv.tv.TvInfo;
 import dev.suven.jungeytv.tv.TvSettings;
@@ -45,6 +47,12 @@ public final class Cli {
               jungey-tv apps                   list the TV's apps
               jungey-tv open APP               Netflix, "prime video", YouTube, ...
               jungey-tv youtube WORDS|LINK     play the first video found, or the one linked
+              jungey-tv search youtube WORDS   list videos; --filter movies|live|long|newest|videos
+              jungey-tv search WORDS           movies and shows, and which apps have them
+              jungey-tv watch TITLE [on APP]   open a movie or show in the app that has it;
+                                               --year YYYY when two share a name
+              jungey-tv type TEXT              type into the TV's on-screen keyboard
+              jungey-tv browse [youtube] WORDS open the window at a search's results
 
             Options: --json for a JSON reply; --tv HOST to use another TV this once.
             """;
@@ -160,6 +168,38 @@ public final class Cli {
                 Remote.App app = tv.open(String.join(" ", rest));
                 yield Outcome.ok("Opening " + app.name() + " on the TV.", app);
             }
+            case "search" -> search(tv, rest);
+            case "watch" -> {
+                List<String> words = new ArrayList<>(rest);
+                int year = 0;
+                int y = words.indexOf("--year");
+                if (y >= 0 && y + 1 < words.size()) {
+                    try {
+                        year = Integer.parseInt(words.get(y + 1));
+                    } catch (NumberFormatException e) {
+                        throw new IllegalArgumentException("\"" + words.get(y + 1) + "\" is not a year.");
+                    }
+                    words.subList(y, y + 2).clear();
+                }
+                if (words.isEmpty()) throw new IllegalArgumentException("Watch what?");
+                SamsungTv.Watching w = tv.watch(String.join(" ", words), year);
+                String where = w.app() == null ? w.offer().service() : w.app().name();
+                String how = switch (w.offer().type()) {
+                    case "rent" -> " to rent";
+                    case "buy" -> " to buy";
+                    default -> "";
+                };
+                String message = w.atTitle()
+                        ? w.title().name() + " is on " + where + how + ". Opening it on the TV."
+                        : w.title().name() + " is on " + where + how + ". Opening " + where
+                        + " on the TV - search for it there.";
+                yield Outcome.ok(message, w);
+            }
+            case "type" -> {
+                if (rest.isEmpty()) throw new IllegalArgumentException("Type what?");
+                tv.type(String.join(" ", rest));
+                yield Outcome.ok("Typed it on the TV.");
+            }
             case "youtube", "play" -> {
                 if (rest.isEmpty()) throw new IllegalArgumentException("Play what?");
                 YouTube.Video video = tv.youtube(String.join(" ", rest));
@@ -174,6 +214,52 @@ public final class Cli {
                 throw new IllegalArgumentException("I don't know \"" + command + "\". Try jungey-tv help.");
             }
         };
+    }
+
+    /** search youtube [--filter F] WORDS, or search WORDS for movies and shows. */
+    private static Outcome search(SamsungTv tv, List<String> rest) throws TvException {
+        List<String> words = new ArrayList<>(rest);
+        String country = tv.settings().country();
+        if (!words.isEmpty() && words.getFirst().equalsIgnoreCase("youtube")) {
+            words.removeFirst();
+            YouTube.Filter filter = YouTube.Filter.ALL;
+            int f = words.indexOf("--filter");
+            if (f >= 0 && f + 1 < words.size()) {
+                filter = YouTube.Filter.named(words.get(f + 1));
+                words.subList(f, f + 2).clear();
+            }
+            if (words.isEmpty()) throw new IllegalArgumentException("Search YouTube for what?");
+            String query = String.join(" ", words);
+            List<YouTube.Video> videos = YouTube.search(query, filter, country).videos();
+            if (videos.isEmpty()) return new Outcome(false, "YouTube found nothing for " + query + ".", "no_match", null);
+            StringBuilder message = new StringBuilder("YouTube has " + videos.size() + " results for " + query + ":");
+            for (int i = 0; i < Math.min(10, videos.size()); i++) {
+                YouTube.Video v = videos.get(i);
+                message.append("\n  ").append(i + 1).append(". ").append(v.title())
+                        .append(v.channel() == null ? "" : " - " + v.channel())
+                        .append(v.live() ? " (live)" : v.length() == null ? "" : " (" + v.length() + ")");
+            }
+            return Outcome.ok(message.toString(), videos);
+        }
+        if (words.isEmpty()) throw new IllegalArgumentException("Search for what?");
+        String query = String.join(" ", words);
+        List<Catalog.Title> titles = Catalog.search(query, country);
+        if (titles.isEmpty()) return new Outcome(false, "Nothing called " + query + " turned up.", "no_match", null);
+        StringBuilder message = new StringBuilder("Movies and shows for " + query + ":");
+        for (int i = 0; i < Math.min(10, titles.size()); i++) {
+            Catalog.Title t = titles.get(i);
+            message.append("\n  ").append(i + 1).append(". ").append(t.name())
+                    .append(t.year() > 0 ? " (" + t.year() + ", " + t.kind() + ")" : " (" + t.kind() + ")")
+                    .append(where(t));
+        }
+        return Outcome.ok(message.toString(), titles);
+    }
+
+    /** " - Netflix, Prime Video to rent", from the streaming services only. */
+    private static String where(Catalog.Title t) {
+        List<String> services = t.offers().stream().filter(Services::known).limit(4)
+                .map(o -> o.service() + (o.included() ? "" : " to " + o.type())).toList();
+        return services.isEmpty() ? " - not streaming" : " - " + String.join(", ", services);
     }
 
     private static Outcome status(SamsungTv tv) throws TvException {

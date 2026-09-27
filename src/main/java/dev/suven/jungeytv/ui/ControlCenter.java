@@ -1,5 +1,6 @@
 package dev.suven.jungeytv.ui;
 
+import dev.suven.jungeytv.tv.Catalog;
 import dev.suven.jungeytv.tv.Remote;
 import dev.suven.jungeytv.tv.SamsungTv;
 import dev.suven.jungeytv.tv.TvException;
@@ -85,6 +86,11 @@ public final class ControlCenter extends Application {
     private final Label powerLabel = new Label("Off");
     private final TilePane appTiles = new TilePane(14, 16);
     private final TextField search = new TextField();
+    private final TextField everywhere = new TextField();
+    private final TextField typing = new TextField();
+    private final SearchSheet sheet = new SearchSheet(new SheetHost());
+    private final Label nowWhere = new Label("");
+    private Node page;
     private final ImageView thumbnail = new ImageView();
     private final Label nowTitle = new Label("Nothing yet - search for anything below.");
     private final Label toast = new Label();
@@ -92,6 +98,15 @@ public final class ControlCenter extends Application {
     private String power = "off";
     private List<Remote.App> apps = List.of();
     private boolean allApps;
+
+    /** A search to show as soon as the window opens - {@code jungey-tv browse WORDS}. */
+    private static String startSearch;
+    private static boolean startWithVideos;
+
+    public static void startWith(String words, boolean videos) {
+        startSearch = words;
+        startWithVideos = videos;
+    }
 
     public static void main(String[] args) {
         launch(args);
@@ -124,6 +139,7 @@ public final class ControlCenter extends Application {
         VBox page = new VBox(20, topBar(), grid);
         page.setPadding(new Insets(24, 26, 26, 26));
         page.getStyleClass().add("page");
+        this.page = page;
 
         ScrollPane scroll = new ScrollPane(page);
         scroll.setFitToWidth(true);
@@ -133,7 +149,7 @@ public final class ControlCenter extends Application {
         toast.getStyleClass().add("toast");
         toast.setOpacity(0);
         toast.setMouseTransparent(true);
-        StackPane root = new StackPane(scroll, toast);
+        StackPane root = new StackPane(scroll, sheet, toast);
         StackPane.setAlignment(toast, Pos.BOTTOM_CENTER);
         StackPane.setMargin(toast, new Insets(0, 0, 22, 0));
         root.getStyleClass().add("backdrop");
@@ -155,8 +171,20 @@ public final class ControlCenter extends Application {
 
         showPower("off");
         showPaired();
+        // The TV opened its keyboard - a search box in Netflix, say: type it here instead.
+        tv.onEvent(event -> {
+            if (event.startsWith("ms.remote.imeStart")) {
+                Platform.runLater(() -> {
+                    typing.requestFocus();
+                    say("The TV is asking for text. Type it here and press Enter.");
+                });
+            }
+        });
         watcher.scheduleWithFixedDelay(this::refresh, 0, 4, TimeUnit.SECONDS);
         if (settings.paired()) loadApps();
+        if (startSearch != null && !startSearch.isBlank()) {
+            sheet.open(startSearch, startWithVideos ? SearchSheet.Tab.YOUTUBE : SearchSheet.Tab.STREAMING);
+        }
     }
 
     @Override
@@ -194,9 +222,28 @@ public final class ControlCenter extends Application {
             return "Paired with the " + settings.spokenName() + ".";
         }));
 
+        everywhere.setPromptText("Search YouTube, movies and shows");
+        everywhere.getStyleClass().add("everywhere");
+        everywhere.setOnAction(e -> {
+            String text = everywhere.getText() == null ? "" : everywhere.getText().trim();
+            if (text.isEmpty()) return;
+            sheet.open(text, SearchSheet.Tab.STREAMING);
+            everywhere.clear();
+        });
+        Node glass = Icons.line(Icons.SEARCH, 17);
+        glass.setMouseTransparent(true);
+        StackPane find = new StackPane(everywhere, glass);
+        StackPane.setAlignment(glass, Pos.CENTER_LEFT);
+        StackPane.setMargin(glass, new Insets(0, 0, 0, 16));
+        find.setMaxWidth(420);
+        find.setPrefWidth(420);
+        HBox.setHgrow(find, Priority.SOMETIMES);
+
         Region grow = new Region();
         HBox.setHgrow(grow, Priority.ALWAYS);
-        HBox bar = new HBox(14, logo, words, grow, pairButton, chip);
+        Region grow2 = new Region();
+        HBox.setHgrow(grow2, Priority.ALWAYS);
+        HBox bar = new HBox(14, logo, words, grow, find, grow2, pairButton, chip);
         bar.setAlignment(Pos.CENTER_LEFT);
         return bar;
     }
@@ -305,8 +352,12 @@ public final class ControlCenter extends Application {
 
         search.setPromptText("Search YouTube, or paste a link");
         search.getStyleClass().add("search");
-        Button play = action(Icons.solid(Icons.PLAY, 14), "Play on TV", "yt-play", this::playSearch);
-        search.setOnAction(e -> play.fire());
+        Button play = new Button("Search YouTube");
+        play.setGraphic(Icons.line(Icons.SEARCH, 15));
+        play.getStyleClass().add("yt-play");
+        play.setFocusTraversable(false);
+        play.setOnAction(e -> searchYouTube());
+        search.setOnAction(e -> searchYouTube());
         HBox.setHgrow(search, Priority.ALWAYS);
         VBox controls = new VBox(10, search, play);
         play.setMaxWidth(Double.MAX_VALUE);
@@ -317,9 +368,10 @@ public final class ControlCenter extends Application {
                 key(Icons.solid(Icons.PAUSE, 20), "pause", "Pause"),
                 key(Icons.solid(Icons.FORWARD, 20), "forward", "Fast forward")));
 
+        nowWhere.getStyleClass().add("muted");
         Region grow = new Region();
         VBox.setVgrow(grow, Priority.ALWAYS);
-        VBox body = new VBox(12, frame, now, nowTitle, grow, transport, controls);
+        VBox body = new VBox(12, frame, now, nowTitle, nowWhere, grow, transport, controls);
         return card("YouTube", youtubeMark(), "accent-red", body);
     }
 
@@ -354,7 +406,30 @@ public final class ControlCenter extends Application {
         Button back = action(Icons.line(Icons.BACK, 18), "Back", "tile-wide", pressing("back", null));
         Button home = action(Icons.line(Icons.HOME, 18), "Home", "tile-wide", pressing("home", null));
         HBox row = grow(new HBox(10, back, home));
-        return card("Navigate", Icons.line(Icons.UP, 16), "accent-cyan", new VBox(14, pad, row));
+
+        // Typing into the TV's own keyboard: search inside Netflix, Prime Video, anything.
+        typing.setPromptText("Type on the TV…");
+        typing.getStyleClass().add("typing");
+        HBox.setHgrow(typing, Priority.ALWAYS);
+        Button send = new Button();
+        send.setGraphic(Icons.line(Icons.KEYBOARD, 18));
+        send.getStyleClass().add("send");
+        send.setFocusTraversable(false);
+        send.setTooltip(new Tooltip("Type this into the TV's keyboard, when an app has it open"));
+        Runnable type = () -> {
+            String text = typing.getText();
+            if (text == null || text.isBlank()) return;
+            typing.clear();
+            run(() -> {
+                tv.type(text);
+                return "Typed \"" + text + "\" on the TV.";
+            });
+        };
+        typing.setOnAction(e -> type.run());
+        send.setOnAction(e -> type.run());
+        HBox typeRow = new HBox(8, typing, send);
+        typeRow.setAlignment(Pos.CENTER_LEFT);
+        return card("Navigate", Icons.line(Icons.UP, 16), "accent-cyan", new VBox(14, pad, row, typeRow));
     }
 
     private Node appsCard() {
@@ -447,18 +522,74 @@ public final class ControlCenter extends Application {
         });
     }
 
-    private String playSearch() throws TvException {
+    /** A link plays at once; words open the search, with YouTube's results to choose from. */
+    private void searchYouTube() {
         String words = search.getText() == null ? "" : search.getText().trim();
-        if (words.isEmpty()) return "Type something to play first.";
-        say("Finding it on YouTube…");
-        YouTube.Video video = tv.youtube(words);
-        Platform.runLater(() -> showNowPlaying(video));
-        return video.title() == null ? "Playing it on the TV." : "Playing on the TV.";
+        if (words.isEmpty()) {
+            say("Type something to search for first.");
+            return;
+        }
+        if (YouTube.idFromLink(words).isPresent()) {
+            playVideo(YouTube.Video.linked(YouTube.idFromLink(words).get()));
+        } else {
+            sheet.open(words, SearchSheet.Tab.YOUTUBE);
+        }
+        search.clear();
     }
 
-    private void showNowPlaying(YouTube.Video video) {
-        thumbnail.setImage(new Image("https://i.ytimg.com/vi/" + video.id() + "/hqdefault.jpg", true));
-        nowTitle.setText(video.title() == null ? "A YouTube video" : AppTiles.label(video.title()));
+    private void playVideo(YouTube.Video video) {
+        run(() -> {
+            tv.play(video);
+            Platform.runLater(() -> showNowPlaying(video.largeThumbnail(),
+                    video.title() == null ? "A YouTube video" : AppTiles.label(video.title()),
+                    video.channel() == null ? "YouTube" : "YouTube  ·  " + video.channel()));
+            return video.title() == null ? "Playing it on the TV." : "Playing " + video.title() + ".";
+        });
+    }
+
+    private void watchTitle(Catalog.Title title, Catalog.Offer offer) {
+        run(() -> {
+            say("Opening " + title.name() + "…");
+            SamsungTv.Watching w = tv.watch(title, offer);
+            String app = w.app() == null ? offer.service() : AppTiles.shortName(w.app().name());
+            Platform.runLater(() -> showNowPlaying(title.poster(), title.name(), app));
+            return w.atTitle() ? "Opening " + title.name() + " in " + app + "."
+                    : "Opened " + app + ". Search for " + title.name() + " there - type it below the arrows.";
+        });
+    }
+
+    private void showNowPlaying(String image, String title, String where) {
+        thumbnail.setImage(image == null ? null : new Image(image, true));
+        nowTitle.setText(title);
+        nowWhere.setText(where);
+    }
+
+    /** What the search sheet asks of the window. */
+    private final class SheetHost implements SearchSheet.Host {
+        @Override
+        public void play(YouTube.Video video) {
+            playVideo(video);
+        }
+
+        @Override
+        public void watch(Catalog.Title title, Catalog.Offer offer) {
+            watchTitle(title, offer);
+        }
+
+        @Override
+        public List<Remote.App> apps() {
+            return apps;
+        }
+
+        @Override
+        public String country() {
+            return settings.country();
+        }
+
+        @Override
+        public void closed() {
+            page.requestFocus();
+        }
     }
 
     private void loadApps() {
@@ -471,6 +602,7 @@ public final class ControlCenter extends Application {
                 Platform.runLater(() -> {
                     apps = found;
                     showApps();
+                    sheet.appsChanged();
                 });
             } catch (TvException e) {
                 if (e.problem() != TvException.Problem.OFF && e.problem() != TvException.Problem.UNREACHABLE) fail(e);
@@ -611,8 +743,15 @@ public final class ControlCenter extends Application {
     // ------------------------------------------------------------------ keyboard
 
     private void keyboard(KeyEvent e) {
-        if (search.isFocused()) {
-            if (e.getCode() == KeyCode.ESCAPE) search.getParent().requestFocus();
+        if (sheet.isOpen()) {
+            if (e.getCode() == KeyCode.ESCAPE) {
+                e.consume();
+                sheet.close();
+            }
+            return;
+        }
+        if (search.isFocused() || everywhere.isFocused() || typing.isFocused()) {
+            if (e.getCode() == KeyCode.ESCAPE) page.requestFocus();
             return;
         }
         String button = switch (e.getCode()) {

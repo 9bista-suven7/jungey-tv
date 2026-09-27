@@ -37,6 +37,8 @@ public final class TvSettings {
     public String token;
     /** SHA-256 of the TV's certificate, pinned at the first connection. */
     public String certSha256;
+    /** Two letters, e.g. "US": which country's listings and YouTube to search. Blank means this computer's. */
+    public String country;
 
     public static Path file() {
         String override = System.getProperty("jungeytv.config");
@@ -77,6 +79,13 @@ public final class TvSettings {
         } catch (IOException e) {
             System.err.println("[jungey-tv] could not write " + f + ": " + e.getMessage());
         }
+    }
+
+    /** The country to search in: as set, or this computer's, or the US. */
+    public String country() {
+        if (country != null && country.matches("[A-Za-z]{2}")) return country.toUpperCase(java.util.Locale.ENGLISH);
+        String here = java.util.Locale.getDefault().getCountry();
+        return here != null && here.matches("[A-Z]{2}") ? here : "US";
     }
 
     public boolean paired() {

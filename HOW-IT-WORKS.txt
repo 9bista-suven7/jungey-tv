@@ -1,0 +1,254 @@
+HOW JUNGEY TV CONNECTS TO AND CONTROLS THE TV
+=============================================
+
+Jungey TV talks to a Samsung smart TV (2016 or newer, Tizen) over the home Wi-Fi. There
+is no cloud, no Samsung account and no extra hardware: the laptop and the TV speak to
+each other directly on the local network, the same way Samsung's own SmartThings phone
+app does.
+
+Tested with: Samsung 7 Series 55" (UN55RU7100FXZA, 2019, Tizen).
+
+
+THE BIG PICTURE
+---------------
+
+    You  --(voice)-->  Jungey  --(runs a command)-->  jungey-tv  --(Wi-Fi)-->  Samsung TV
+    You  --(clicks)-->  Jungey TV window  ---------------------------(Wi-Fi)-->  Samsung TV
+
+The TV offers four different doors, and Jungey TV uses each for one job:
+
+    Port   Protocol                  Used for                          Needs permission?
+    ----   ------------------------  --------------------------------  -----------------
+    1900   UPnP / SSDP (UDP)         finding the TV on the network      no
+    8001   HTTP (plain)              asking the TV about itself         no
+    8002   Secure WebSocket (wss)    pressing buttons, apps list,       yes - "Allow"
+                                     opening apps
+    8080   DIAL (HTTP)               playing a YouTube video            no
+    9, 7   Wake-on-LAN (UDP)         waking the TV from standby         no
+
+
+STEP 1 - FINDING THE TV   (Discovery.java)
+----------------------------------------
+
+The laptop shouts one message to every device on the network at once (a UPnP
+"M-SEARCH" to the multicast address 239.255.255.250, port 1900):
+
+    M-SEARCH * HTTP/1.1
+    HOST: 239.255.255.250:1900
+    MAN: "ssdp:discover"
+    MX: 2
+    ST: ssdp:all
+
+Every device that understands UPnP answers - routers, printers, TVs. Jungey TV keeps
+the ones whose answer mentions "Samsung", then asks each of them what it is (step 2).
+The first Samsung TV found is remembered, so this only happens once.
+
+If discovery cannot work on a network, the address can be given by hand:
+    jungey-tv use 192.168.1.20
+
+
+STEP 2 - ASKING THE TV ABOUT ITSELF   (TvInfo.java)
+-------------------------------------------------
+
+A plain web request, no permission needed:
+
+    GET http://<tv-address>:8001/api/v2/
+
+The TV answers with JSON describing itself, for example:
+
+    {
+      "device": {
+        "name": "[TV] Samsung 7 Series (55)",
+        "modelName": "UN55RU7100FXZA",
+        "type": "Samsung SmartTV",
+        "wifiMac": "xx:xx:xx:xx:xx:xx",
+        "PowerState": "on",
+        "TokenAuthSupport": "true"
+      }
+    }
+
+From this Jungey TV learns:
+  - the TV's name and model (shown in the window, spoken by Jungey)
+  - its network card's MAC address (needed to wake it later - step 7)
+  - whether it is "on" or in "standby" (the window checks this every 4 seconds)
+  - that it needs a token (TokenAuthSupport), so pairing is required
+
+Detail that mattered: this request must use HTTP/1.1. Java offers to upgrade to HTTP/2
+by default, and the TV's small web server hangs up on that offer.
+
+
+STEP 3 - PAIRING, ONCE   (Remote.java, PinnedTrust.java)
+--------------------------------------------------------
+
+Everything that changes something on the TV goes through its remote-control channel, a
+secure WebSocket on port 8002:
+
+    wss://<tv-address>:8002/api/v2/channels/samsung.remote.control?name=SnVuZ2V5IFRW
+
+"SnVuZ2V5IFRW" is "Jungey TV" in Base64 - it is the name the TV shows on screen and lists
+under Settings > General > External Device Manager > Device Connection Manager.
+
+The first time, the TV shows a pop-up: "Allow Jungey TV to connect?"
+  - Allow  -> the TV sends back   {"event":"ms.channel.connect","data":{"token":"12345678",...}}
+  - Deny   -> the TV sends back   {"event":"ms.channel.unauthorized"}
+  - nobody answers in 30 seconds  {"event":"ms.channel.timeOut"}
+
+On Allow, Jungey TV saves the token. Every later connection adds it to the address
+(...&token=12345678) and the TV lets it straight in, with no pop-up.
+
+The TV's certificate:
+  The connection is encrypted (TLS), but the TV signs it with its own certificate,
+  issued to "SmartViewSDK" rather than to an address, so normal certificate checks can
+  never pass. Instead, Jungey TV records the certificate's SHA-256 fingerprint the moment
+  pairing succeeds ("pinning"). From then on, only that exact certificate is accepted.
+  If anything else ever answers at the TV's address, Jungey TV refuses to talk to it.
+  (After replacing or resetting the TV:  jungey-tv pair --reset)
+
+
+STEP 4 - PRESSING BUTTONS   (Remote.key, Keys.java)
+---------------------------------------------------
+
+Over the open WebSocket, each button press is one small JSON message:
+
+    {
+      "method": "ms.remote.control",
+      "params": {
+        "Cmd": "Click",
+        "DataOfCmd": "KEY_VOLUP",
+        "Option": "false",
+        "TypeOfRemote": "SendRemoteKey"
+      }
+    }
+
+Keys.java turns the words people use into the TV's key names:
+
+    volume up -> KEY_VOLUP        mute      -> KEY_MUTE       home    -> KEY_HOME
+    volume down -> KEY_VOLDOWN    channel up -> KEY_CHUP      back    -> KEY_RETURN
+    up/down/left/right -> KEY_UP / KEY_DOWN / KEY_LEFT / KEY_RIGHT
+    ok -> KEY_ENTER               hdmi 2    -> KEY_HDMI2      source  -> KEY_SOURCE
+    play -> KEY_PLAY              pause     -> KEY_PAUSE      power   -> KEY_POWER
+
+Repeated presses ("volume up 5") are spaced 140 ms apart, because the TV can merge two
+presses that arrive too close together. The window keeps the connection open, so each
+click answers almost instantly; a single command opens it, presses, and closes it.
+
+
+STEP 5 - LISTING AND OPENING APPS   (Remote.apps, Remote.launch)
+----------------------------------------------------------------
+
+Asking for the installed apps, over the same WebSocket:
+
+    {"method":"ms.channel.emit","params":{"event":"ed.installedApp.get","to":"host"}}
+
+The TV replies with every app, e.g.:
+
+    {"event":"ed.installedApp.get","data":{"data":[
+        {"appId":"3201907018807","name":"Netflix","app_type":2},
+        {"appId":"111299001912","name":"YouTube","app_type":2}, ... ]}}
+
+Opening one:
+
+    {"method":"ms.channel.emit","params":{"event":"ed.apps.launch","to":"host",
+        "data":{"appId":"3201907018807","action_type":"DEEP_LINK"}}}
+
+("DEEP_LINK" for normal apps; "NATIVE_LAUNCH" for the TV's own built-in ones, app_type 4.)
+
+App names are matched loosely, so "prime" finds "Prime Video", "disney plus" finds
+"Disney+", and "netflix" finds "Netflix". If the TV is in standby it is turned on first.
+
+
+STEP 6 - PLAYING A YOUTUBE VIDEO   (YouTube.java)
+-------------------------------------------------
+
+Two parts:
+
+1. Finding the video. For words like "lofi hip hop", Jungey TV loads YouTube's own search
+   page (https://www.youtube.com/results?search_query=...) and reads the first video's ID
+   and title out of it. No Google account or API key. A pasted YouTube link skips this.
+
+2. Playing it. This uses DIAL, the protocol a phone uses when you press "cast":
+
+       POST http://<tv-address>:8080/ws/apps/YouTube
+       Content-Type: text/plain
+       body:  v=jfKfPfyJRdk
+
+   The TV's YouTube app opens (if it is not already) and plays that video. DIAL needs no
+   token. The window then shows the video's thumbnail from
+   https://i.ytimg.com/vi/<id>/hqdefault.jpg under "Now playing".
+
+
+STEP 7 - POWER   (SamsungTv.turnOn / turnOff, WakeOnLan.java)
+------------------------------------------------------------
+
+Turning OFF:  if the TV says it is "on", send KEY_POWER over the WebSocket.
+
+Turning ON depends on how asleep the TV is:
+  - "standby" (it still answers on port 8001): send KEY_POWER over the WebSocket.
+  - not answering at all: send a Wake-on-LAN "magic packet" - 6 bytes of FF followed by
+    the TV's MAC address repeated 16 times (102 bytes) - to the whole network on UDP
+    ports 9 and 7, three times. Then check every second, for up to 20 seconds, until
+    the TV reports "on".
+
+  Waking from deep standby only works with this enabled on the TV:
+    Settings > General > Network > Expert Settings > Power On with Mobile
+
+
+HOW JUNGEY USES IT   (Jungey: TvSkill.java)
+-------------------------------------------
+
+Jungey does not talk to the TV itself. When a sentence mentions the TV, Jungey's TV skill
+turns it into a jungey-tv command, runs it, and says the answer:
+
+    "open Netflix on the TV"             ->  jungey-tv --json open netflix
+    "play lofi on YouTube on the TV"     ->  jungey-tv --json youtube lofi
+    "TV volume down by 5"                ->  jungey-tv --json volume down 5
+    "switch the TV to HDMI 2"            ->  jungey-tv --json source hdmi2
+    "turn on the TV"                     ->  jungey-tv --json on
+    "pair the TV"                        ->  jungey-tv --json pair
+
+jungey-tv answers with one line of JSON, the message already worded to be spoken:
+
+    {"ok":true,"message":"Opening Netflix on the TV."}
+    {"ok":false,"message":"The TV is off or not answering.","problem":"unreachable"}
+
+Sentences without "TV" in them ("volume up", "open Netflix") still control the laptop.
+
+
+WHERE THINGS ARE KEPT
+---------------------
+
+~/.config/jungey-tv/tv.json   - readable by you only (permissions 600)
+    host          the TV's address on the network
+    name, model   what the TV calls itself
+    mac           its network card's address, for waking it
+    token         the TV's permission, given when Allow was pressed
+    certSha256    the TV's certificate fingerprint, pinned at pairing
+
+Delete this file to make Jungey TV forget the TV completely. The TV itself keeps
+"Jungey TV" in its Device Connection Manager list, where it can also be removed.
+
+
+THE CODE, FILE BY FILE   (apps/tv/src/main/java/dev/suven/jungeytv/)
+--------------------------------------------------------------------
+
+    Launcher.java          no arguments -> the window; arguments -> a command
+    Cli.java               the jungey-tv commands and their --json replies
+    tv/Discovery.java      step 1: the UPnP search
+    tv/TvInfo.java         step 2: the TV's description on port 8001
+    tv/Remote.java         steps 3-5: the secure WebSocket - pairing, keys, apps
+    tv/PinnedTrust.java    step 3: accepting only the TV's own certificate
+    tv/Keys.java           step 4: button names -> KEY_ names
+    tv/YouTube.java        step 6: search, and playing over DIAL
+    tv/WakeOnLan.java      step 7: the magic packet
+    tv/SamsungTv.java      puts it all together: on, off, press, apps, open, youtube
+    tv/TvSettings.java     ~/.config/jungey-tv/tv.json
+    ui/ControlCenter.java  the window
+
+
+WHAT IT CANNOT DO (YET)
+-----------------------
+
+  - Read or set the exact volume level - the remote channel only has up/down buttons.
+  - Know which app or channel is showing right now.
+  - Search inside Netflix or Prime Video - it can only open them.
+  - Control Samsung TVs from before 2016, which use a different, older protocol.
