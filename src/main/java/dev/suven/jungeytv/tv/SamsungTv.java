@@ -6,6 +6,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Everything Jungey TV can do to the TV, in the words it is asked in: turn it on, turn the
@@ -22,8 +25,14 @@ public final class SamsungTv implements AutoCloseable {
     /** A TV woken from standby takes this long to be ready for anything. */
     private static final Duration WAKE_WAIT = Duration.ofSeconds(20);
 
+    /** "the office on peacock": the title, and a service name after the last " on ". */
+    private static final Pattern ON_SERVICE = Pattern.compile("(?i)^(.+)\\s+on\\s+(?:the\\s+)?(.+?)(?:\\s+app)?$");
+
     private final TvSettings settings;
     private Remote remote;
+    private volatile Consumer<String> tap;
+    /** The TV's apps as last listed; they change only when something is installed. */
+    private volatile List<Remote.App> installed;
 
     public SamsungTv(TvSettings settings) {
         this.settings = settings;
@@ -143,13 +152,27 @@ public final class SamsungTv implements AutoCloseable {
 
     public List<Remote.App> apps() throws TvException {
         requireOn();
-        return withRemote(Remote::apps);
+        installed = withRemote(Remote::apps);
+        return installed;
+    }
+
+    private List<Remote.App> installed() throws TvException {
+        List<Remote.App> known = installed;
+        if (known != null && !known.isEmpty()) return known;
+        installed = withRemote(Remote::apps);
+        return installed;
+    }
+
+    /** Hear what the TV says of its own accord, such as its keyboard opening. */
+    public void onEvent(Consumer<String> tap) {
+        this.tap = tap;
+        if (remote != null) remote.onEvent(tap);
     }
 
     /** Open the installed app whose name best matches, turning the TV on first if need be. */
     public Remote.App open(String name) throws TvException {
         turnOn();
-        List<Remote.App> apps = withRemote(Remote::apps);
+        List<Remote.App> apps = installed();
         Remote.App app = best(apps, name).orElseThrow(() -> new TvException(TvException.Problem.NO_MATCH,
                 "There is no " + name + " on the TV."));
         withRemote(r -> {
@@ -162,31 +185,118 @@ public final class SamsungTv implements AutoCloseable {
     /** Play a video - a link, or words to search YouTube for - turning the TV on first if need be. */
     public YouTube.Video youtube(String linkOrSearch) throws TvException {
         Optional<String> id = YouTube.idFromLink(linkOrSearch);
-        YouTube.Video video = id.isPresent() ? new YouTube.Video(id.get(), null) : YouTube.search(linkOrSearch);
+        YouTube.Video video = id.isPresent() ? YouTube.Video.linked(id.get())
+                : YouTube.first(linkOrSearch, settings.country());
+        play(video);
+        return video;
+    }
+
+    /** Play this video, chosen from a search. */
+    public void play(YouTube.Video video) throws TvException {
         turnOn();
         YouTube.play(settings.host, video.id());
-        return video;
+    }
+
+    /** What happened when asked to watch something: the title, where, and whether it opened at the title. */
+    public record Watching(Catalog.Title title, Catalog.Offer offer, Remote.App app, boolean atTitle) {
+    }
+
+    /**
+     * Open a title in the app that has it - at the title itself where the app allows (Netflix,
+     * YouTube), or at the app's home otherwise.
+     */
+    public Watching watch(Catalog.Title title, Catalog.Offer offer) throws TvException {
+        turnOn();
+        List<Remote.App> apps = installed();
+        Optional<String> video = Services.youtubeVideo(offer);
+        if (video.isPresent()) {
+            YouTube.play(settings.host, video.get());
+            return new Watching(title, offer, best(apps, "youtube").orElse(null), true);
+        }
+        Remote.App app = Services.app(offer, apps).orElseThrow(() -> new TvException(TvException.Problem.NO_MATCH,
+                "The TV has no " + offer.service() + " app."));
+        String link = Services.deepLink(offer);
+        withRemote(r -> {
+            r.launch(app, link);
+            return null;
+        });
+        return new Watching(title, offer, app, link != null);
+    }
+
+    /**
+     * Find a film or series and open it: in the service named ("the office on peacock"), or
+     * else the first app on the TV that has it included, or else one that rents or sells it.
+     */
+    public Watching watch(String what) throws TvException {
+        return watch(what, 0);
+    }
+
+    /** As {@link #watch(String)}, preferring the title released in this year: two series can share a name. */
+    public Watching watch(String what, int year) throws TvException {
+        turnOn();
+        List<Remote.App> apps = installed();
+        String query = what.trim();
+        Remote.App wanted = null;
+        Matcher on = ON_SERVICE.matcher(query);
+        if (on.matches()) {
+            Optional<Remote.App> app = Services.named(on.group(2), apps);
+            if (app.isPresent()) {
+                wanted = app.get();
+                query = on.group(1).trim();
+            }
+        }
+        List<Catalog.Title> titles = new java.util.ArrayList<>(Catalog.search(query, settings.country()));
+        if (titles.isEmpty()) throw new TvException(TvException.Problem.NO_MATCH, "I could not find " + query + ".");
+        if (year > 0) titles.sort(Comparator.comparing(t -> t.year() != year));
+
+        // The best match that the TV can play, looking a little past the most popular one.
+        for (Catalog.Title t : titles.subList(0, Math.min(5, titles.size()))) {
+            Catalog.Offer pick = null;
+            for (Catalog.Offer o : t.offers()) {
+                boolean playable = Services.app(o, apps).isPresent() || Services.youtubeVideo(o).isPresent();
+                if (!playable) continue;
+                if (wanted != null && !Services.sameService(o, wanted, apps)) continue;
+                pick = o;
+                break;
+            }
+            if (pick != null) return watch(t, pick);
+        }
+        Catalog.Title top = titles.getFirst();
+        String where = top.offers().isEmpty() ? "is not streaming anywhere here"
+                : "is only on " + String.join(", ", top.offers().stream().map(Catalog.Offer::service).distinct().limit(3).toList())
+                + ", which the TV has no app for";
+        throw new TvException(TvException.Problem.NO_MATCH, top.name() + (wanted == null ? " " + where
+                : " is not on " + wanted.name()) + ".");
+    }
+
+    /** Type into the TV's on-screen keyboard, when an app has it open. */
+    public void type(String text) throws TvException {
+        requireOn();
+        withRemote(r -> {
+            r.text(text);
+            return null;
+        });
     }
 
     /**
      * The installed app a spoken name means: exact first, then one whose name starts with
-     * it, then one containing it - "prime" finds Prime Video, "disney" finds Disney+.
+     * it, then one with it as a whole word - "prime" finds Prime Video, "disney" finds
+     * Disney+, and "max" does not find MagellanTV.
      */
     static Optional<Remote.App> best(List<Remote.App> apps, String name) {
         String want = simple(name);
         if (want.isEmpty()) return Optional.empty();
         return apps.stream()
-                .filter(a -> {
-                    String n = simple(a.name());
-                    return n.equals(want) || n.startsWith(want) || n.contains(want) || want.contains(n) && n.length() >= 4;
-                })
-                .min(Comparator.comparingInt(a -> {
-                    String n = simple(a.name());
-                    if (n.equals(want)) return 0;
-                    if (n.startsWith(want)) return 1;
-                    if (n.contains(want)) return 2;
-                    return 3;
-                }));
+                .filter(a -> rank(simple(a.name()), want) < 4)
+                .min(Comparator.comparingInt(a -> rank(simple(a.name()), want)));
+    }
+
+    private static int rank(String n, String want) {
+        if (n.equals(want)) return 0;
+        if (n.startsWith(want + " ") || n.startsWith(want) && want.length() >= 4) return 1;
+        if ((" " + n + " ").contains(" " + want + " ")) return 2;
+        if (n.length() >= 4 && (" " + want + " ").contains(" " + n + " ")) return 3;
+        return 4;
     }
 
     private static String simple(String s) {
@@ -215,7 +325,10 @@ public final class SamsungTv implements AutoCloseable {
                     "Jungey TV is not paired with the TV yet. Pair it, then press Allow on the TV.");
         }
         for (int attempt = 0; ; attempt++) {
-            if (remote == null || !remote.isOpen()) remote = Remote.open(settings, CONNECT_WAIT);
+            if (remote == null || !remote.isOpen()) {
+                remote = Remote.open(settings, CONNECT_WAIT);
+                if (tap != null) remote.onEvent(tap);
+            }
             try {
                 return action.run(remote);
             } catch (TvException e) {

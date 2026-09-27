@@ -22,6 +22,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
@@ -46,11 +47,13 @@ public final class Remote implements AutoCloseable {
 
     private final WebSocket socket;
     private final BlockingQueue<JsonNode> events;
+    private final Listener listener;
     private volatile boolean open = true;
 
-    private Remote(WebSocket socket, BlockingQueue<JsonNode> events) {
+    private Remote(WebSocket socket, BlockingQueue<JsonNode> events, Listener listener) {
         this.socket = socket;
         this.events = events;
+        this.listener = listener;
     }
 
     /** An installed app, as the TV lists it. */
@@ -74,11 +77,12 @@ public final class Remote implements AutoCloseable {
                 .build();
 
         BlockingQueue<JsonNode> events = new LinkedBlockingQueue<>();
+        Listener listener = new Listener(events);
         WebSocket socket;
         try {
             socket = client.newWebSocketBuilder()
                     .connectTimeout(Duration.ofSeconds(4))
-                    .buildAsync(URI.create(uri), new Listener(events))
+                    .buildAsync(URI.create(uri), listener)
                     .get(8, TimeUnit.SECONDS);
         } catch (ExecutionException e) {
             throw connectFailure(e.getCause() == null ? e : e.getCause());
@@ -89,7 +93,7 @@ public final class Remote implements AutoCloseable {
             throw new TvException(TvException.Problem.FAILED, "Interrupted.");
         }
 
-        Remote remote = new Remote(socket, events);
+        Remote remote = new Remote(socket, events, listener);
         JsonNode reply = remote.await(e -> {
             String ev = e.path("event").asText();
             return ev.equals("ms.channel.connect") || ev.equals("ms.channel.unauthorized")
@@ -167,6 +171,27 @@ public final class Remote implements AutoCloseable {
                     .put("TypeOfRemote", "SendRemoteKey");
             send(msg);
         }
+    }
+
+    /**
+     * Type into the TV's on-screen keyboard - whichever app opened it, Netflix's search
+     * included - and finish, as pressing Done would. Nothing happens if no keyboard is open.
+     */
+    public void text(String text) throws TvException {
+        ObjectNode msg = MAPPER.createObjectNode().put("method", "ms.remote.control");
+        msg.putObject("params")
+                .put("Cmd", Base64.getEncoder().encodeToString(text.getBytes(StandardCharsets.UTF_8)))
+                .put("DataOfCmd", "base64")
+                .put("TypeOfRemote", "SendInputString");
+        send(msg);
+        ObjectNode end = MAPPER.createObjectNode().put("method", "ms.remote.control");
+        end.putObject("params").put("TypeOfRemote", "SendInputEnd");
+        send(end);
+    }
+
+    /** Hear what the TV says of its own accord - "ms.remote.imeStart" when its keyboard opens. */
+    public void onEvent(Consumer<String> tap) {
+        listener.tap = tap;
     }
 
     /** Every app installed on the TV. */
@@ -258,6 +283,7 @@ public final class Remote implements AutoCloseable {
     private static final class Listener implements WebSocket.Listener {
         private final BlockingQueue<JsonNode> events;
         private final StringBuilder partial = new StringBuilder();
+        private volatile Consumer<String> tap;
 
         Listener(BlockingQueue<JsonNode> events) {
             this.events = events;
@@ -273,7 +299,10 @@ public final class Remote implements AutoCloseable {
             partial.append(data);
             if (last) {
                 try {
-                    events.add(MAPPER.readTree(partial.toString()));
+                    JsonNode event = MAPPER.readTree(partial.toString());
+                    events.add(event);
+                    Consumer<String> t = tap;
+                    if (t != null) t.accept(event.path("event").asText(""));
                 } catch (IOException e) {
                     // Not JSON; nothing the TV says that matters comes like that.
                 }

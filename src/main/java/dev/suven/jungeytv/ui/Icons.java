@@ -35,6 +35,11 @@ final class Icons {
     static final String REWIND = "M11.5 6 L4 12 L11.5 18 Z M20.5 6 L13 12 L20.5 18 Z";
     static final String FORWARD = "M3.5 6 L11 12 L3.5 18 Z M12.5 6 L20 12 L12.5 18 Z";
     static final String GRID = "M4 4 H10 V10 H4 Z M14 4 H20 V10 H14 Z M4 14 H10 V20 H4 Z M14 14 H20 V20 H14 Z";
+    static final String SEARCH = "M17 10.5 A6.5 6.5 0 1 1 4 10.5 A6.5 6.5 0 1 1 17 10.5 Z M15.3 15.3 L20.5 20.5";
+    static final String FILM = "M3.5 4.5 H20.5 V19.5 H3.5 Z M7.5 4.5 V19.5 M16.5 4.5 V19.5 M3.5 9.5 H7.5 M3.5 14.5 H7.5"
+            + " M16.5 9.5 H20.5 M16.5 14.5 H20.5";
+    static final String KEYBOARD = "M2.5 6 H21.5 V18 H2.5 Z M6 9.5 H6.01 M9.5 9.5 H9.51 M13 9.5 H13.01 M16.5 9.5 H16.51"
+            + " M6 12.5 H6.01 M9.5 12.5 H9.51 M13 12.5 H13.01 M16.5 12.5 H16.51 M7.5 15.3 H16.5";
 
     /** A line drawing: power, home, arrows. */
     static Node line(String path, double size) {
