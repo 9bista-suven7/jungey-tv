@@ -1,0 +1,416 @@
+/* Jungey TV - control center. Night glass, with Jungey's cyan and a colour for each card. */
+
+.root {
+    -fx-font-family: "Inter", "Cantarell", "DejaVu Sans", sans-serif;
+    -fx-font-size: 13px;
+}
+
+.backdrop {
+    -fx-background-color:
+        radial-gradient(center 12% 0%, radius 55%, rgba(56, 232, 255, 0.17), transparent),
+        radial-gradient(center 92% 100%, radius 60%, rgba(167, 139, 250, 0.16), transparent),
+        radial-gradient(center 60% 40%, radius 45%, rgba(255, 77, 94, 0.06), transparent),
+        #05080f;
+}
+
+.scroller,
+.scroller > .viewport {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+}
+
+.scroller .scroll-bar:vertical {
+    -fx-background-color: transparent;
+    -fx-pref-width: 9;
+}
+
+.scroller .scroll-bar:vertical .thumb {
+    -fx-background-color: rgba(120, 200, 255, 0.22);
+    -fx-background-radius: 5;
+}
+
+.scroller .scroll-bar .increment-button,
+.scroller .scroll-bar .decrement-button {
+    -fx-padding: 0;
+    -fx-shape: null;
+}
+
+/* ---------- top bar ---------- */
+
+.brand {
+    -fx-font-size: 23px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #f2fbff;
+}
+
+.brand-sub {
+    -fx-font-size: 10.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #38e8ff;
+}
+
+.chip {
+    -fx-background-color: rgba(255, 77, 94, 0.1);
+    -fx-border-color: rgba(255, 77, 94, 0.45);
+    -fx-background-radius: 20;
+    -fx-border-radius: 20;
+    -fx-padding: 7 14 7 12;
+}
+
+.chip .label { -fx-text-fill: #ffd0d5; -fx-font-weight: bold; }
+
+.chip-dot {
+    -fx-background-color: #ff4d5e;
+    -fx-background-radius: 5;
+    -fx-min-width: 9; -fx-min-height: 9; -fx-max-width: 9; -fx-max-height: 9;
+}
+
+.chip:on {
+    -fx-background-color: rgba(77, 255, 166, 0.1);
+    -fx-border-color: rgba(77, 255, 166, 0.5);
+}
+
+.chip:on .label { -fx-text-fill: #c8ffe3; }
+.chip:on .chip-dot {
+    -fx-background-color: #4dffa6;
+    -fx-effect: dropshadow(gaussian, #4dffa6, 8, 0.5, 0, 0);
+}
+
+.chip:standby {
+    -fx-background-color: rgba(255, 201, 74, 0.1);
+    -fx-border-color: rgba(255, 201, 74, 0.5);
+}
+
+.chip:standby .label { -fx-text-fill: #ffe7b0; }
+.chip:standby .chip-dot { -fx-background-color: #ffc94a; }
+
+.pair {
+    -fx-background-color: linear-gradient(to bottom, #ffd76a, #f0a91c);
+    -fx-text-fill: #2a1a00;
+    -fx-font-weight: bold;
+    -fx-background-radius: 20;
+    -fx-padding: 8 18 8 18;
+    -fx-cursor: hand;
+}
+
+/* ---------- cards ---------- */
+
+.card {
+    -fx-background-color: linear-gradient(to bottom, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.025));
+    -fx-background-radius: 22;
+    -fx-border-color: rgba(120, 200, 255, 0.13);
+    -fx-border-radius: 22;
+    -fx-padding: 18;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.5), 26, 0.1, 0, 10);
+}
+
+.card.accent-violet { -fx-border-color: rgba(167, 139, 250, 0.2); }
+.card.accent-red { -fx-border-color: rgba(255, 77, 94, 0.2); }
+.card.accent-amber { -fx-border-color: rgba(255, 201, 74, 0.18); }
+.card.accent-green { -fx-border-color: rgba(77, 255, 166, 0.16); }
+
+.card-title {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #eaf8fd;
+}
+
+.badge {
+    -fx-background-radius: 9;
+    -fx-min-width: 30; -fx-min-height: 30; -fx-max-width: 30; -fx-max-height: 30;
+}
+
+.badge.accent-cyan { -fx-background-color: rgba(56, 232, 255, 0.16); }
+.badge.accent-violet { -fx-background-color: rgba(167, 139, 250, 0.18); }
+.badge.accent-red { -fx-background-color: rgba(255, 77, 94, 0.14); }
+.badge.accent-amber { -fx-background-color: rgba(255, 201, 74, 0.15); }
+.badge.accent-green { -fx-background-color: rgba(77, 255, 166, 0.14); }
+
+.badge.accent-cyan .icon-line { -fx-stroke: #38e8ff; }
+.badge.accent-violet .icon-solid { -fx-fill: #b9a4ff; }
+.badge.accent-amber .icon-line { -fx-stroke: #ffc94a; }
+.badge.accent-green .icon-solid { -fx-fill: #4dffa6; }
+
+.eyebrow {
+    -fx-font-size: 10.5px;
+    -fx-font-weight: bold;
+    -fx-text-fill: rgba(150, 200, 225, 0.6);
+}
+
+.muted {
+    -fx-text-fill: rgba(160, 195, 215, 0.62);
+    -fx-font-size: 12px;
+}
+
+/* ---------- icons ---------- */
+
+.icon-line {
+    -fx-fill: transparent;
+    -fx-stroke: #dff6fc;
+    -fx-stroke-width: 2.2;
+    -fx-stroke-line-cap: round;
+    -fx-stroke-line-join: round;
+}
+
+.icon-solid { -fx-fill: #dff6fc; }
+
+/* ---------- buttons ---------- */
+
+.button {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-background-radius: 14;
+    -fx-border-color: rgba(255, 255, 255, 0.07);
+    -fx-border-radius: 14;
+    -fx-text-fill: #e2f6fc;
+    -fx-font-size: 13px;
+    -fx-graphic-text-gap: 9;
+    -fx-cursor: hand;
+    -fx-padding: 10 14 10 14;
+}
+
+.button:hover {
+    -fx-background-color: rgba(120, 220, 255, 0.14);
+    -fx-border-color: rgba(120, 220, 255, 0.35);
+}
+
+.button:pressed {
+    -fx-background-color: rgba(120, 220, 255, 0.28);
+    -fx-scale-x: 0.97;
+    -fx-scale-y: 0.97;
+}
+
+.key {
+    -fx-min-width: 56; -fx-min-height: 50;
+}
+
+.tile-wide { -fx-min-height: 46; }
+
+.big-round {
+    -fx-min-width: 66; -fx-min-height: 66; -fx-max-width: 66; -fx-max-height: 66;
+    -fx-background-radius: 33;
+    -fx-border-radius: 33;
+    -fx-background-color: linear-gradient(to bottom right, #8b6dff, #4b2fd1);
+    -fx-border-color: rgba(185, 164, 255, 0.6);
+    -fx-effect: dropshadow(gaussian, rgba(139, 109, 255, 0.55), 18, 0.2, 0, 4);
+}
+
+.big-round:hover {
+    -fx-background-color: linear-gradient(to bottom right, #a58cff, #5e40e8);
+}
+
+.big-round .icon-line { -fx-stroke: white; -fx-stroke-width: 2.6; }
+
+.ok {
+    -fx-background-color: linear-gradient(to bottom right, #52f0ff, #1492c7);
+    -fx-border-color: #7af3ff;
+    -fx-text-fill: #03141c;
+    -fx-font-weight: bold;
+    -fx-effect: dropshadow(gaussian, rgba(56, 232, 255, 0.45), 16, 0.2, 0, 2);
+}
+
+.ok:hover { -fx-background-color: linear-gradient(to bottom right, #8af6ff, #1fa8e0); }
+
+.port {
+    -fx-min-height: 58;
+    -fx-alignment: center-left;
+    -fx-font-weight: bold;
+}
+
+.port .icon-line { -fx-stroke: #ffc94a; }
+.port:hover { -fx-background-color: rgba(255, 201, 74, 0.14); -fx-border-color: rgba(255, 201, 74, 0.45); }
+
+/* ---------- television ---------- */
+
+.screen {
+    -fx-background-color: linear-gradient(to bottom, #0c1119, #04060a);
+    -fx-background-radius: 12;
+    -fx-border-color: #1c2735;
+    -fx-border-width: 4;
+    -fx-border-radius: 12;
+}
+
+.screen:on {
+    -fx-background-color: linear-gradient(to bottom right, #1dc8ff, #6a4bff 55%, #ff4fa3);
+    -fx-effect: dropshadow(gaussian, rgba(90, 160, 255, 0.55), 32, 0.2, 0, 0);
+}
+
+.screen:standby {
+    -fx-background-color: linear-gradient(to bottom, #120d0e, #060404);
+}
+
+.screen-glare {
+    -fx-background-color: linear-gradient(to bottom right, rgba(255, 255, 255, 0.12), transparent 45%);
+    -fx-background-radius: 9;
+}
+
+.screen-text {
+    -fx-text-fill: white;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.5), 6, 0.2, 0, 1);
+}
+
+.screen:standby .screen-text { -fx-text-fill: #ff8b96; -fx-font-size: 11px; }
+
+.stand {
+    -fx-background-color: #1c2735;
+    -fx-background-radius: 0 0 6 6;
+}
+
+.tv-name {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #f2fbff;
+}
+
+.power-label {
+    -fx-font-weight: bold;
+    -fx-text-fill: rgba(255, 170, 180, 0.8);
+}
+
+.power-label:on { -fx-text-fill: #4dffa6; }
+
+.switch {
+    -fx-background-color: #263244;
+    -fx-background-radius: 16;
+    -fx-border-color: rgba(255, 255, 255, 0.08);
+    -fx-border-radius: 16;
+    -fx-cursor: hand;
+    -fx-padding: 3;
+}
+
+.switch:on {
+    -fx-background-color: linear-gradient(to right, #1fd67f, #4dffa6);
+    -fx-effect: dropshadow(gaussian, rgba(77, 255, 166, 0.45), 14, 0.2, 0, 0);
+}
+
+.knob {
+    -fx-background-color: white;
+    -fx-background-radius: 13;
+    -fx-min-width: 26; -fx-min-height: 26; -fx-max-width: 26; -fx-max-height: 26;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.45), 6, 0, 0, 1);
+}
+
+/* ---------- youtube ---------- */
+
+.yt-mark {
+    -fx-background-color: #ff2d2d;
+    -fx-background-radius: 6;
+    -fx-min-width: 26; -fx-min-height: 18; -fx-max-width: 26; -fx-max-height: 18;
+}
+
+.yt-mark .icon-solid { -fx-fill: white; }
+
+.thumb-frame {
+    -fx-background-color: linear-gradient(to bottom right, #3a0a10, #12060a 60%, #0a0a12);
+    -fx-background-radius: 14;
+}
+
+.thumb-play .icon-solid {
+    -fx-fill: rgba(255, 255, 255, 0.92);
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.6), 12, 0.2, 0, 2);
+}
+
+.now-title {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #f2fbff;
+}
+
+.search {
+    -fx-background-color: rgba(255, 255, 255, 0.06);
+    -fx-border-color: rgba(255, 255, 255, 0.1);
+    -fx-background-radius: 14;
+    -fx-border-radius: 14;
+    -fx-text-fill: #eaf8fd;
+    -fx-prompt-text-fill: rgba(170, 200, 220, 0.45);
+    -fx-highlight-fill: rgba(255, 77, 94, 0.4);
+    -fx-padding: 11 14 11 14;
+}
+
+.search:focused { -fx-border-color: rgba(255, 77, 94, 0.7); }
+
+.yt-play {
+    -fx-background-color: linear-gradient(to bottom, #ff4747, #d10000);
+    -fx-border-color: rgba(255, 140, 140, 0.6);
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-min-height: 44;
+    -fx-effect: dropshadow(gaussian, rgba(255, 45, 45, 0.4), 16, 0.2, 0, 3);
+}
+
+.yt-play:hover { -fx-background-color: linear-gradient(to bottom, #ff6464, #e60000); }
+.yt-play .icon-solid { -fx-fill: white; }
+
+/* ---------- apps ---------- */
+
+.app {
+    -fx-cursor: hand;
+    -fx-padding: 4;
+    -fx-pref-width: 90;
+}
+
+.app:hover {
+    -fx-scale-x: 1.07;
+    -fx-scale-y: 1.07;
+}
+
+.app-face {
+    -fx-background-radius: 20;
+    -fx-min-width: 74; -fx-min-height: 74; -fx-max-width: 74; -fx-max-height: 74;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.5), 14, 0.1, 0, 5);
+}
+
+.app:hover .app-face {
+    -fx-effect: dropshadow(gaussian, rgba(120, 220, 255, 0.45), 20, 0.2, 0, 4);
+}
+
+.app-more {
+    -fx-background-color: rgba(255, 255, 255, 0.04);
+    -fx-border-color: rgba(120, 220, 255, 0.35);
+    -fx-border-style: segments(6, 5);
+    -fx-border-radius: 20;
+}
+
+.app-more .icon-solid { -fx-fill: #38e8ff; }
+
+.app-mark {
+    -fx-text-fill: white;
+    -fx-font-size: 27px;
+    -fx-font-weight: bold;
+}
+
+.app-mark-word { -fx-font-size: 16px; }
+.app-mark-dark { -fx-text-fill: #04260f; }
+
+.app-name {
+    -fx-text-fill: #d2e9f1;
+    -fx-font-size: 11.5px;
+    -fx-alignment: center;
+    -fx-text-alignment: center;
+    -fx-max-width: 88;
+}
+
+/* ---------- messages ---------- */
+
+.toast {
+    -fx-background-color: rgba(8, 14, 24, 0.94);
+    -fx-border-color: rgba(56, 232, 255, 0.55);
+    -fx-background-radius: 22;
+    -fx-border-radius: 22;
+    -fx-padding: 10 20 10 20;
+    -fx-text-fill: #e6f7fc;
+    -fx-font-size: 13px;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.6), 22, 0.2, 0, 6);
+}
+
+.toast-error {
+    -fx-border-color: rgba(255, 77, 94, 0.7);
+    -fx-text-fill: #ffc9cf;
+}
+
+.tooltip {
+    -fx-background-color: #0d1624;
+    -fx-text-fill: #d6f4fb;
+    -fx-background-radius: 8;
+}

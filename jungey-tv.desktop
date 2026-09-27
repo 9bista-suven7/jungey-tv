@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Jungey TV
+GenericName=TV Remote
+Comment=Control your Samsung TV: power, volume, inputs, apps and YouTube
+Exec=jungey-tv
+Icon=jungey-tv
+Terminal=false
+Categories=AudioVideo;Utility;
+Keywords=tv;remote;samsung;youtube;netflix;

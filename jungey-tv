@@ -1,0 +1,29 @@
+#!/bin/sh
+# Jungey TV: the remote window with no arguments, one TV command with some.
+#   jungey-tv                 open the remote
+#   jungey-tv open netflix    do that, say how it went, exit
+JAVA=/usr/lib/jvm/java-21-openjdk-amd64/bin/java
+[ -x "$JAVA" ] || JAVA=java
+
+# Your own build (apps/tv/install.sh) ahead of the one that came with the system.
+JAR=""
+for jar in "${XDG_DATA_HOME:-$HOME/.local/share}/jungey-tv/jungey-tv.jar" /usr/share/jungey-tv/jungey-tv.jar; do
+    if [ -f "$jar" ]; then JAR="$jar"; break; fi
+done
+if [ -z "$JAR" ]; then
+    echo "jungey-tv: not installed - run apps/tv/install.sh" >&2
+    exit 1
+fi
+
+# Jungey runs a command at a time, so starting fast matters more than running fast: class
+# data sharing maps in what the last start loaded, and the quick compiler is enough for a
+# remote. Each version of the jar gets an archive of its own.
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/jungey-tv"
+CDS="$CACHE/jungey-tv-$(stat -c %Y-%s "$JAR").jsa"
+if mkdir -p "$CACHE" 2>/dev/null; then
+    find "$CACHE" -maxdepth 1 -name 'jungey-tv*.jsa' ! -path "$CDS" -delete
+    # The JVM's own warnings go to stderr: stdout is the answer, and Jungey reads it.
+    exec "$JAVA" -Xlog:disable -Xlog:all=warning:stderr \
+        -XX:+AutoCreateSharedArchive -XX:SharedArchiveFile="$CDS" -XX:TieredStopAtLevel=1 -jar "$JAR" "$@"
+fi
+exec "$JAVA" -XX:TieredStopAtLevel=1 -jar "$JAR" "$@"

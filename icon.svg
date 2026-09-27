@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- Jungey TV: a screen on a stand, with the play mark, in Jungey's cyan. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1422"/>
+      <stop offset="1" stop-color="#04070d"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="52" fill="url(#bg)"/>
+  <rect x="8.5" y="8.5" width="239" height="239" rx="51.5" fill="none" stroke="#38e8ff" stroke-opacity="0.35"/>
+  <g filter="url(#glow)" fill="none" stroke="#38e8ff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="44" y="62" width="168" height="112" rx="16"/>
+    <path d="M98 206 H158"/>
+    <path d="M128 174 V204"/>
+  </g>
+  <path d="M114 94 L152 118 L114 142 Z" fill="#38e8ff" filter="url(#glow)"/>
+</svg>
