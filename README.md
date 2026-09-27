@@ -34,34 +34,31 @@ the TV is a card on one screen:
 
 - **Television**: whether it is on, and a switch to turn it on or off
 - **Sound**: volume up and down, five at a time, and mute
-- **YouTube**: search, or paste a link to play it at once; the video shows under
-  *Now playing*
+- **Cast**: this computer's screen and sound on the TV, like an HDMI cable without the
+  cable. Press *Start casting*; the TV shows it a few seconds later. Playing a film in the
+  browser? Press F11 for full screen. With *Sound on the TV* on, the sound moves to the TV
+  while casting and comes back when it stops. Stop it here, or with Back on the TV's remote.
 - **Inputs**: HDMI 1 to 4, and the TV's own list of inputs
-- **Navigate**: the arrows, OK, Back and Home, for the TV's menus, and a box that types
-  into the TV's own keyboard - for the search box inside Netflix, Prime Video or any app
+- **Navigate**: the arrows, OK, Back and Home for the TV's menus, and rewind, play, pause
+  and fast forward
 - **Apps**: the TV's apps, the usual ones first; click one to open it
 
 The keyboard works too: arrows, Enter, Backspace for back, `+` and `-` for volume, `M` to
 mute, `H` for home, Space to play.
 
-### Searching
+### Searching YouTube
 
-The search bar at the top, or the one in the YouTube card, opens the search over the whole
-window, with two tabs of results to choose from:
+The bar at the top searches YouTube, over the whole window: twenty videos at a time with
+their thumbnails, length, channel, views and age, and *More results* for the next twenty.
+Filters, as on the website: All, Videos, Movies, Live, 20+ min and Newest. Click a video to
+play it on the TV; paste a link to play it at once. Beside the results is the TV's remote -
+the arrows, OK, Back and Home, and play and pause - for when YouTube on the TV asks who is
+watching.
 
-- **YouTube**: twenty videos at a time with their thumbnails, length, channel, views and
-  age, and *More results* for the next twenty. Filters, as on the website: All, Videos,
-  Movies (full films, marked *Free with ads* or *Rent or buy*), Live, 20+ min and Newest.
-  Click a video to play it on the TV.
-- **Movies & shows**: films and series with their posters, and a button for each app on
-  your TV that has it - Netflix, Prime Video, Disney+, Hulu, Peacock, Tubi and the rest,
-  marked *rent*, *buy* or *free* where it is not included. Click one to open it there.
-  Services the TV has no app for are listed underneath.
+### Casting needs
 
-Netflix opens at the title itself. Other apps open at their home screen, since they do not
-accept a title from outside; type its name into the box under the arrows once the app's
-search is open. When an app opens the TV's keyboard, the window notices and puts the
-cursor in that box for you.
+ffmpeg (`sudo apt install ffmpeg`) and an X11 desktop. The TV fetches the picture from this
+computer, so both must be on the same network; only the TV's address is let in.
 
 ## Commands
 
@@ -84,7 +81,8 @@ jungey-tv search the office      movies and shows, and which apps have them
 jungey-tv watch the office on peacock
                                  open a movie or show in the app that has it
 jungey-tv type friends           type into the TV's on-screen keyboard
-jungey-tv browse the office      open the window at a search's results
+jungey-tv cast [--no-sound]      this computer on the TV until Ctrl+C
+jungey-tv browse lofi beats      open the window at YouTube's results
 ```
 
 Add `--json` for `{"ok": true, "message": "…"}` instead of plain text; the message is

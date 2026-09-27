@@ -22,7 +22,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
@@ -47,13 +46,11 @@ public final class Remote implements AutoCloseable {
 
     private final WebSocket socket;
     private final BlockingQueue<JsonNode> events;
-    private final Listener listener;
     private volatile boolean open = true;
 
-    private Remote(WebSocket socket, BlockingQueue<JsonNode> events, Listener listener) {
+    private Remote(WebSocket socket, BlockingQueue<JsonNode> events) {
         this.socket = socket;
         this.events = events;
-        this.listener = listener;
     }
 
     /** An installed app, as the TV lists it. */
@@ -77,12 +74,11 @@ public final class Remote implements AutoCloseable {
                 .build();
 
         BlockingQueue<JsonNode> events = new LinkedBlockingQueue<>();
-        Listener listener = new Listener(events);
         WebSocket socket;
         try {
             socket = client.newWebSocketBuilder()
                     .connectTimeout(Duration.ofSeconds(4))
-                    .buildAsync(URI.create(uri), listener)
+                    .buildAsync(URI.create(uri), new Listener(events))
                     .get(8, TimeUnit.SECONDS);
         } catch (ExecutionException e) {
             throw connectFailure(e.getCause() == null ? e : e.getCause());
@@ -93,7 +89,7 @@ public final class Remote implements AutoCloseable {
             throw new TvException(TvException.Problem.FAILED, "Interrupted.");
         }
 
-        Remote remote = new Remote(socket, events, listener);
+        Remote remote = new Remote(socket, events);
         JsonNode reply = remote.await(e -> {
             String ev = e.path("event").asText();
             return ev.equals("ms.channel.connect") || ev.equals("ms.channel.unauthorized")
@@ -189,11 +185,6 @@ public final class Remote implements AutoCloseable {
         send(end);
     }
 
-    /** Hear what the TV says of its own accord - "ms.remote.imeStart" when its keyboard opens. */
-    public void onEvent(Consumer<String> tap) {
-        listener.tap = tap;
-    }
-
     /** Every app installed on the TV. */
     public List<App> apps() throws TvException {
         events.clear();
@@ -283,7 +274,6 @@ public final class Remote implements AutoCloseable {
     private static final class Listener implements WebSocket.Listener {
         private final BlockingQueue<JsonNode> events;
         private final StringBuilder partial = new StringBuilder();
-        private volatile Consumer<String> tap;
 
         Listener(BlockingQueue<JsonNode> events) {
             this.events = events;
@@ -299,10 +289,7 @@ public final class Remote implements AutoCloseable {
             partial.append(data);
             if (last) {
                 try {
-                    JsonNode event = MAPPER.readTree(partial.toString());
-                    events.add(event);
-                    Consumer<String> t = tap;
-                    if (t != null) t.accept(event.path("event").asText(""));
+                    events.add(MAPPER.readTree(partial.toString()));
                 } catch (IOException e) {
                     // Not JSON; nothing the TV says that matters comes like that.
                 }

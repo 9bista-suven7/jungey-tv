@@ -1,8 +1,5 @@
 package dev.suven.jungeytv.ui;
 
-import dev.suven.jungeytv.tv.Catalog;
-import dev.suven.jungeytv.tv.Remote;
-import dev.suven.jungeytv.tv.Services;
 import dev.suven.jungeytv.tv.TvException;
 import dev.suven.jungeytv.tv.YouTube;
 import javafx.animation.FadeTransition;
@@ -19,7 +16,7 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
-import javafx.scene.layout.FlowPane;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -30,34 +27,28 @@ import javafx.scene.shape.Rectangle;
 import javafx.util.Duration;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Searching, over the whole window, with results to choose from: YouTube's videos with
- * their thumbnails, length, channel and views, filtered the way the website filters them;
- * and films and series with their posters and which of the TV's apps have them.
+ * Searching YouTube, over the whole window: videos with their thumbnails, length, channel
+ * and views, filtered the way the website filters them. Beside the results, the TV's
+ * remote - YouTube on the TV can ask who is watching, and that is answered from here.
  *
- * <p>Both searches run at once, off the window's thread. A newer search makes the older
- * one's answer go unseen, so typing quickly never shows stale results.
+ * <p>Searches run off the window's thread. A newer search makes the older one's answer go
+ * unseen, so typing quickly never shows stale results.
  */
 final class SearchSheet extends StackPane {
-
-    enum Tab { YOUTUBE, STREAMING }
 
     /** What the sheet needs from the window around it. */
     interface Host {
         void play(YouTube.Video video);
 
-        void watch(Catalog.Title title, Catalog.Offer offer);
-
-        /** The TV's apps, or empty while they are not known. */
-        List<Remote.App> apps();
+        /** Press a button on the TV's remote, by any name the TV knows. */
+        void press(String button);
 
         String country();
 
@@ -67,42 +58,34 @@ final class SearchSheet extends StackPane {
     private static final PseudoClass SELECTED = PseudoClass.getPseudoClass("selected");
     private static final double VIDEO_W = 230;
     private static final double VIDEO_H = VIDEO_W * 9 / 16;
-    private static final double POSTER_W = 148;
-    private static final double POSTER_H = POSTER_W * 3 / 2;
+    private static final double PANEL_W = 196;
 
     private final Host host;
-    private final ExecutorService searcher = Executors.newFixedThreadPool(2, r -> {
+    private final ExecutorService searcher = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "jungey-tv-search");
         t.setDaemon(true);
         return t;
     });
     private final AtomicInteger videoSearch = new AtomicInteger();
-    private final AtomicInteger titleSearch = new AtomicInteger();
 
     private final TextField query = new TextField();
-    private final Button youtubeTab = new Button("YouTube");
-    private final Button streamingTab = new Button("Movies & shows");
+    private final Label heading = new Label("YouTube");
     private final HBox filters = new HBox(8);
     private final TilePane videoGrid = new TilePane(18, 26);
-    private final TilePane titleGrid = new TilePane(16, 28);
     private final Button more = new Button("More results");
-    private final VBox youtubePane;
-    private final VBox streamingPane;
     private final VBox status = new VBox(12);
     private final Label statusText = new Label();
     private final ProgressIndicator spinner = new ProgressIndicator();
     private final ScrollPane scroll = new ScrollPane();
+    private final ImageView nowImage = new ImageView();
+    private final Label nowTitle = new Label("Pick a video to play it on the TV.");
 
-    private Tab tab = Tab.YOUTUBE;
     private YouTube.Filter filter = YouTube.Filter.ALL;
     private String searched = "";
     private String nextPage;
-    private boolean videosLoading, titlesLoading, moreLoading;
-    private String videosError, titlesError;
-    private int videoCount = -1, titleCount = -1;
-    /** Opened for films: if none turn up, show YouTube's results instead. */
-    private boolean fallBackToVideos;
-    private List<Catalog.Title> lastTitles = List.of();
+    private boolean loading, moreLoading;
+    private String error;
+    private int videoCount = -1;
 
     SearchSheet(Host host) {
         this.host = host;
@@ -117,7 +100,7 @@ final class SearchSheet extends StackPane {
         back.setTooltip(new Tooltip("Back to the control center (Esc)"));
         back.setOnAction(e -> close());
 
-        query.setPromptText("Search YouTube, movies and shows");
+        query.setPromptText("Search YouTube, or paste a link");
         query.getStyleClass().add("sheet-query");
         query.setOnAction(e -> search(query.getText()));
         HBox.setHgrow(query, Priority.ALWAYS);
@@ -133,16 +116,9 @@ final class SearchSheet extends StackPane {
         HBox header = new HBox(12, back, box, go);
         header.setAlignment(Pos.CENTER_LEFT);
 
-        // Tabs, and YouTube's filters beside them.
-        youtubeTab.setGraphic(youtubeMark());
-        streamingTab.setGraphic(Icons.line(Icons.FILM, 16));
-        for (Button b : List.of(youtubeTab, streamingTab)) {
-            b.getStyleClass().add("tab-button");
-            b.setFocusTraversable(false);
-        }
-        youtubeTab.setOnAction(e -> select(Tab.YOUTUBE));
-        streamingTab.setOnAction(e -> select(Tab.STREAMING));
-
+        // YouTube, and its filters.
+        heading.setGraphic(youtubeMark());
+        heading.getStyleClass().add("sheet-heading");
         for (YouTube.Filter f : YouTube.Filter.values()) {
             Button chip = new Button(f.label);
             chip.getStyleClass().add("filter-chip");
@@ -158,8 +134,8 @@ final class SearchSheet extends StackPane {
         filters.setAlignment(Pos.CENTER_RIGHT);
         Region grow = new Region();
         HBox.setHgrow(grow, Priority.ALWAYS);
-        HBox tabs = new HBox(10, youtubeTab, streamingTab, grow, filters);
-        tabs.setAlignment(Pos.CENTER_LEFT);
+        HBox bar = new HBox(10, heading, grow, filters);
+        bar.setAlignment(Pos.CENTER_LEFT);
 
         // Results.
         videoGrid.setPrefTileWidth(VIDEO_W);
@@ -169,13 +145,7 @@ final class SearchSheet extends StackPane {
         more.setOnAction(e -> loadMore());
         HBox moreRow = new HBox(more);
         moreRow.setAlignment(Pos.CENTER);
-        youtubePane = new VBox(24, videoGrid, moreRow);
-
-        titleGrid.setPrefTileWidth(POSTER_W);
-        titleGrid.setTileAlignment(Pos.TOP_LEFT);
-        Label source = new Label("Where to watch: listings from JustWatch");
-        source.getStyleClass().add("attribution");
-        streamingPane = new VBox(24, titleGrid, source);
+        VBox videos = new VBox(24, videoGrid, moreRow);
 
         spinner.getStyleClass().add("sheet-spinner");
         spinner.setMaxSize(46, 46);
@@ -186,28 +156,29 @@ final class SearchSheet extends StackPane {
         status.setPadding(new Insets(80, 0, 0, 0));
         status.setMouseTransparent(true);
 
-        StackPane results = new StackPane(youtubePane, streamingPane, status);
-        StackPane.setAlignment(youtubePane, Pos.TOP_LEFT);
-        StackPane.setAlignment(streamingPane, Pos.TOP_LEFT);
+        StackPane results = new StackPane(videos, status);
+        StackPane.setAlignment(videos, Pos.TOP_LEFT);
         results.setPadding(new Insets(6, 2, 30, 2));
         scroll.setContent(results);
         scroll.setFitToWidth(true);
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         scroll.getStyleClass().add("scroller");
-        VBox.setVgrow(scroll, Priority.ALWAYS);
+        HBox.setHgrow(scroll, Priority.ALWAYS);
 
-        VBox page = new VBox(18, header, tabs, scroll);
-        page.setPadding(new Insets(22, 26, 0, 26));
+        HBox body = new HBox(22, scroll, remotePanel());
+        VBox.setVgrow(body, Priority.ALWAYS);
+
+        VBox page = new VBox(18, header, bar, body);
+        page.setPadding(new Insets(22, 26, 22, 26));
         getChildren().add(page);
-        select(Tab.YOUTUBE);
     }
 
     boolean isOpen() {
         return isVisible();
     }
 
-    /** Show the sheet and search for these words, starting on this tab. */
-    void open(String words, Tab start) {
+    /** Show the sheet and search YouTube for these words. */
+    void open(String words) {
         if (!isVisible()) {
             setOpacity(0);
             setVisible(true);
@@ -215,8 +186,6 @@ final class SearchSheet extends StackPane {
             in.setToValue(1);
             in.play();
         }
-        select(start);
-        fallBackToVideos = start == Tab.STREAMING;
         query.setText(words);
         search(words);
         query.requestFocus();
@@ -233,9 +202,77 @@ final class SearchSheet extends StackPane {
         out.play();
     }
 
-    /** The TV's apps arrived or changed: which services can be opened may be different now. */
-    void appsChanged() {
-        if (isVisible() && !lastTitles.isEmpty()) showTitles(lastTitles);
+    // ------------------------------------------------------------------ the TV's remote
+
+    /** What is playing, and the buttons to get around YouTube on the TV - its "Who's watching?" too. */
+    private Node remotePanel() {
+        Label title = new Label("ON THE TV");
+        title.getStyleClass().add("eyebrow");
+
+        nowImage.setFitWidth(PANEL_W - 32);
+        nowImage.setFitHeight((PANEL_W - 32) * 9 / 16);
+        nowImage.setPreserveRatio(false);
+        StackPane thumb = new StackPane(nowImage);
+        thumb.getStyleClass().add("thumb");
+        thumb.setMaxWidth(PANEL_W - 32);
+        clip(thumb, PANEL_W - 32, (PANEL_W - 32) * 9 / 16, 12);
+        thumb.visibleProperty().bind(nowImage.imageProperty().isNotNull());
+        thumb.managedProperty().bind(thumb.visibleProperty());
+        nowTitle.getStyleClass().add("now-title");
+        nowTitle.setWrapText(true);
+        nowTitle.setMaxHeight(58);
+
+        HBox transport = new HBox(6,
+                key(Icons.solid(Icons.REWIND, 15), "rewind", "Rewind", "mini-key"),
+                key(Icons.solid(Icons.PLAY, 15), "play", "Play", "mini-key"),
+                key(Icons.solid(Icons.PAUSE, 15), "pause", "Pause", "mini-key"),
+                key(Icons.solid(Icons.FORWARD, 15), "forward", "Fast forward", "mini-key"));
+        transport.setAlignment(Pos.CENTER);
+
+        GridPane pad = new GridPane();
+        pad.setHgap(6);
+        pad.setVgap(6);
+        pad.setAlignment(Pos.CENTER);
+        pad.add(key(Icons.line(Icons.UP, 20), "up", "Up", "key"), 1, 0);
+        pad.add(key(Icons.line(Icons.LEFT, 20), "left", "Left", "key"), 0, 1);
+        Button ok = key(null, "ok", "OK", "key");
+        ok.setText("OK");
+        ok.getStyleClass().add("ok");
+        pad.add(ok, 1, 1);
+        pad.add(key(Icons.line(Icons.RIGHT, 20), "right", "Right", "key"), 2, 1);
+        pad.add(key(Icons.line(Icons.DOWN, 20), "down", "Down", "key"), 1, 2);
+
+        Button back = key(Icons.line(Icons.BACK, 16), "back", "Back", "tile-wide");
+        back.setText("Back");
+        Button home = key(Icons.line(Icons.HOME, 16), "home", "Home", "tile-wide");
+        home.setText("Home");
+        HBox row = new HBox(6, back, home);
+        for (Button b : List.of(back, home)) {
+            b.setMaxWidth(Double.MAX_VALUE);
+            HBox.setHgrow(b, Priority.ALWAYS);
+        }
+
+        Label hint = new Label("Your arrow keys, Enter and Backspace work here too, once the search box is left.");
+        hint.getStyleClass().add("muted");
+        hint.setWrapText(true);
+
+        VBox panel = new VBox(12, title, thumb, nowTitle, transport, pad, row, hint);
+        panel.getStyleClass().add("remote-panel");
+        panel.setMinWidth(PANEL_W);
+        panel.setPrefWidth(PANEL_W);
+        panel.setMaxWidth(PANEL_W);
+        panel.setMaxHeight(Region.USE_PREF_SIZE);
+        return panel;
+    }
+
+    private Button key(Node icon, String button, String tip, String style) {
+        Button b = new Button();
+        if (icon != null) b.setGraphic(icon);
+        b.getStyleClass().add(style);
+        b.setFocusTraversable(false);
+        b.setTooltip(new Tooltip(tip));
+        b.setOnAction(e -> host.press(button));
+        return b;
     }
 
     // ------------------------------------------------------------------ searching
@@ -244,16 +281,24 @@ final class SearchSheet extends StackPane {
         String text = words == null ? "" : words.trim();
         if (text.isEmpty()) {
             statusText.setText("Type what you want to watch.");
+            status.setVisible(true);
             return;
         }
         Optional<String> link = YouTube.idFromLink(text);
         if (link.isPresent()) {
-            host.play(YouTube.Video.linked(link.get()));
+            play(YouTube.Video.linked(link.get()));
             return;
         }
         searched = text;
         searchVideos(text);
-        searchTitles(text);
+    }
+
+    private void play(YouTube.Video v) {
+        nowImage.setImage(new Image(v.thumbnail(), true));
+        nowTitle.setText(v.title() == null ? "A YouTube video" : AppTiles.label(v.title()));
+        host.play(v);
+        // The arrow keys go to the TV now, for YouTube's "Who's watching?".
+        requestFocus();
     }
 
     private void searchVideos(String text) {
@@ -262,8 +307,9 @@ final class SearchSheet extends StackPane {
         videoGrid.getChildren().clear();
         nextPage = null;
         videoCount = -1;
-        videosError = null;
-        videosLoading = true;
+        error = null;
+        loading = true;
+        scroll.setVvalue(0);
         refresh();
         YouTube.Filter f = filter;
         String country = host.country();
@@ -272,7 +318,7 @@ final class SearchSheet extends StackPane {
                 YouTube.Page page = YouTube.search(text, f, country);
                 Platform.runLater(() -> {
                     if (mine != videoSearch.get()) return;
-                    videosLoading = false;
+                    loading = false;
                     videoCount = page.videos().size();
                     nextPage = page.next();
                     page.videos().forEach(v -> videoGrid.getChildren().add(videoCard(v)));
@@ -281,8 +327,8 @@ final class SearchSheet extends StackPane {
             } catch (TvException e) {
                 Platform.runLater(() -> {
                     if (mine != videoSearch.get()) return;
-                    videosLoading = false;
-                    videosError = e.getMessage();
+                    loading = false;
+                    error = e.getMessage();
                     refresh();
                 });
             }
@@ -317,76 +363,20 @@ final class SearchSheet extends StackPane {
         });
     }
 
-    private void searchTitles(String text) {
-        int mine = titleSearch.incrementAndGet();
-        titleGrid.getChildren().clear();
-        lastTitles = List.of();
-        titleCount = -1;
-        titlesError = null;
-        titlesLoading = true;
-        refresh();
-        String country = host.country();
-        searcher.submit(() -> {
-            try {
-                List<Catalog.Title> titles = Catalog.search(text, country);
-                Platform.runLater(() -> {
-                    if (mine != titleSearch.get()) return;
-                    titlesLoading = false;
-                    titleCount = titles.size();
-                    lastTitles = titles;
-                    showTitles(titles);
-                    if (fallBackToVideos && titles.isEmpty()) select(Tab.YOUTUBE);
-                    fallBackToVideos = false;
-                    refresh();
-                });
-            } catch (TvException e) {
-                Platform.runLater(() -> {
-                    if (mine != titleSearch.get()) return;
-                    titlesLoading = false;
-                    titlesError = e.getMessage();
-                    if (fallBackToVideos) select(Tab.YOUTUBE);
-                    fallBackToVideos = false;
-                    refresh();
-                });
-            }
-        });
-    }
-
-    private void showTitles(List<Catalog.Title> titles) {
-        titleGrid.getChildren().clear();
-        titles.forEach(t -> titleGrid.getChildren().add(titleCard(t)));
-    }
-
-    private void select(Tab next) {
-        tab = next;
-        youtubeTab.pseudoClassStateChanged(SELECTED, next == Tab.YOUTUBE);
-        streamingTab.pseudoClassStateChanged(SELECTED, next == Tab.STREAMING);
-        youtubePane.setVisible(next == Tab.YOUTUBE);
-        streamingPane.setVisible(next == Tab.STREAMING);
-        filters.setVisible(next == Tab.YOUTUBE);
-        scroll.setVvalue(0);
-        refresh();
-    }
-
-    /** Counts on the tabs, and the spinner or a message where there are no results to show. */
+    /** The count by the heading, and the spinner or a message where there are no results to show. */
     private void refresh() {
-        youtubeTab.setText(videoCount > 0 ? "YouTube  " + videoCount + (nextPage != null ? "+" : "") : "YouTube");
-        streamingTab.setText(titleCount > 0 ? "Movies & shows  " + titleCount : "Movies & shows");
+        heading.setText(videoCount > 0 ? "YouTube  " + videoCount + (nextPage != null ? "+" : "") : "YouTube");
         more.setVisible(nextPage != null && videoCount > 0);
         more.setManaged(more.isVisible());
 
-        boolean videos = tab == Tab.YOUTUBE;
-        boolean loading = videos ? videosLoading : titlesLoading;
-        String error = videos ? videosError : titlesError;
-        int count = videos ? videoCount : titleCount;
         spinner.setVisible(loading);
         spinner.setManaged(loading);
         if (loading) {
-            statusText.setText(videos ? "Searching YouTube…" : "Looking through the streaming apps…");
+            statusText.setText("Searching YouTube…");
         } else if (error != null) {
             statusText.setText(error);
-        } else if (count == 0) {
-            statusText.setText("Nothing found for \"" + searched + "\"" + (videos && filter != YouTube.Filter.ALL
+        } else if (videoCount == 0) {
+            statusText.setText("Nothing found for \"" + searched + "\"" + (filter != YouTube.Filter.ALL
                     ? " with the " + filter.label + " filter." : "."));
         } else {
             statusText.setText("");
@@ -462,104 +452,7 @@ final class SearchSheet extends StackPane {
         card.setPrefWidth(VIDEO_W);
         card.setMaxWidth(VIDEO_W);
         Tooltip.install(card, new Tooltip("Play on the TV"));
-        card.setOnMouseClicked(e -> host.play(v));
-        return card;
-    }
-
-    private Node titleCard(Catalog.Title t) {
-        AppTiles.Look look = AppTiles.look(t.name());
-        Label initials = new Label(look.mark());
-        initials.getStyleClass().add("poster-initials");
-        StackPane poster = new StackPane(initials);
-        poster.setStyle("-fx-background-color: linear-gradient(to bottom right, " + look.from() + ", " + look.to() + ");");
-        poster.getStyleClass().add("poster");
-        size(poster, POSTER_W, POSTER_H);
-        clip(poster, POSTER_W, POSTER_H, 16);
-        if (t.poster() != null) {
-            ImageView image = new ImageView(new Image(t.poster(), POSTER_W * 1.5, POSTER_H * 1.5, true, true, true));
-            image.setFitWidth(POSTER_W);
-            image.setFitHeight(POSTER_H);
-            poster.getChildren().add(image);
-        }
-        Label kind = new Label(t.kind().equals("show") ? "SERIES" : "FILM");
-        kind.getStyleClass().add("kind-badge");
-        poster.getChildren().add(kind);
-        StackPane.setAlignment(kind, Pos.TOP_LEFT);
-        StackPane.setMargin(kind, new Insets(8, 0, 0, 8));
-
-        Label name = new Label(t.name());
-        name.getStyleClass().add("poster-title");
-        name.setWrapText(true);
-        name.setPrefHeight(36);
-        name.setMaxHeight(36);
-        name.setAlignment(Pos.TOP_LEFT);
-        Label year = new Label((t.year() > 0 ? t.year() + "  ·  " : "") + (t.kind().equals("show") ? "Series" : "Film"));
-        year.getStyleClass().add("video-meta");
-
-        // The TV's apps that have it, as buttons; the other services it is on, as words.
-        List<Remote.App> apps = host.apps();
-        Map<String, Catalog.Offer> onTv = new LinkedHashMap<>();
-        Map<String, Remote.App> appFor = new LinkedHashMap<>();
-        List<String> elsewhere = new ArrayList<>();
-        for (Catalog.Offer o : t.offers()) {
-            if (!Services.known(o)) continue;
-            if (apps.isEmpty()) {
-                // The TV's apps are not known yet: offer every service, and let the TV say.
-                onTv.putIfAbsent(o.service(), o);
-                continue;
-            }
-            Optional<Remote.App> app = Services.app(o, apps);
-            if (app.isPresent()) {
-                if (!appFor.containsKey(app.get().id())) {
-                    appFor.put(app.get().id(), app.get());
-                    onTv.put(app.get().id(), o);
-                }
-            } else if (!elsewhere.contains(o.service())) {
-                elsewhere.add(o.service());
-            }
-        }
-
-        FlowPane chips = new FlowPane(6, 6);
-        chips.setPrefWrapLength(POSTER_W);
-        for (Map.Entry<String, Catalog.Offer> e : onTv.entrySet()) {
-            if (chips.getChildren().size() == 4) break;   // the best four; a fifth is only another shop
-            Catalog.Offer o = e.getValue();
-            Remote.App app = appFor.get(e.getKey());
-            String label = app != null ? AppTiles.shortName(app.name()) : o.service();
-            if (!o.included()) label += o.type().equals("rent") ? " · rent" : " · buy";
-            else if (o.type().startsWith("free")) label += " · free";
-            Button chip = new Button(label);
-            AppTiles.Look service = AppTiles.look(app != null ? app.name() : o.service());
-            chip.setStyle("-fx-background-color: linear-gradient(to bottom right, " + service.from() + ", " + service.to() + ");"
-                    + (service.darkMark() ? " -fx-text-fill: #04260f;" : ""));
-            chip.getStyleClass().add("service-chip");
-            chip.setFocusTraversable(false);
-            chip.setTooltip(new Tooltip("Open in " + label.replaceFirst(" · .*", "") + " on the TV"));
-            chip.setOnAction(ev -> host.watch(t, o));
-            chips.getChildren().add(chip);
-        }
-
-        VBox card = new VBox(8, poster, name, year);
-        if (!chips.getChildren().isEmpty()) card.getChildren().add(chips);
-        if (!elsewhere.isEmpty()) {
-            Label also = new Label("Also on " + String.join(", ", elsewhere.subList(0, Math.min(3, elsewhere.size()))));
-            also.getStyleClass().add("also-on");
-            also.setWrapText(true);
-            card.getChildren().add(also);
-        }
-        if (chips.getChildren().isEmpty() && elsewhere.isEmpty()) {
-            Label none = new Label("Not streaming right now");
-            none.getStyleClass().add("also-on");
-            card.getChildren().add(none);
-        }
-        card.getStyleClass().add("title-card");
-        card.setPrefWidth(POSTER_W);
-        card.setMaxWidth(POSTER_W);
-        Catalog.Offer first = onTv.isEmpty() ? null : onTv.values().iterator().next();
-        poster.setOnMouseClicked(e -> {
-            if (first != null) host.watch(t, first);
-        });
-        if (first != null) Tooltip.install(poster, new Tooltip("Open " + t.name() + " on the TV"));
+        card.setOnMouseClicked(e -> play(v));
         return card;
     }
 
