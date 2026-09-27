@@ -8,11 +8,11 @@ own, its own settings. Jungey only runs `jungey-tv --json …` and says what com
 ## Install
 
 ```bash
-apps/tv/install.sh
+./install.sh
 ```
 
 That builds it and adds the `jungey-tv` command and **Jungey TV** to the app menu, for your
-account. On Jungey OS it is already installed. `apps/tv/install.sh --uninstall` takes it
+account. On Jungey OS it is already installed. `./install.sh --uninstall` takes it
 away again.
 
 ## First time
