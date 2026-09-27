@@ -8,6 +8,7 @@ import dev.suven.jungeytv.tv.Discovery;
 import dev.suven.jungeytv.tv.Keys;
 import dev.suven.jungeytv.tv.Remote;
 import dev.suven.jungeytv.tv.SamsungTv;
+import dev.suven.jungeytv.tv.ScreenCast;
 import dev.suven.jungeytv.tv.Services;
 import dev.suven.jungeytv.tv.TvException;
 import dev.suven.jungeytv.tv.TvInfo;
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * jungey-tv as a command: do one thing to the TV and say how it went. This is how Jungey
@@ -52,7 +54,9 @@ public final class Cli {
               jungey-tv watch TITLE [on APP]   open a movie or show in the app that has it;
                                                --year YYYY when two share a name
               jungey-tv type TEXT              type into the TV's on-screen keyboard
-              jungey-tv browse [youtube] WORDS open the window at a search's results
+              jungey-tv cast [--no-sound]      show this computer's screen and sound on the TV,
+                                               until Ctrl+C or the TV stops it
+              jungey-tv browse WORDS           open the window at YouTube's results
 
             Options: --json for a JSON reply; --tv HOST to use another TV this once.
             """;
@@ -200,6 +204,7 @@ public final class Cli {
                 tv.type(String.join(" ", rest));
                 yield Outcome.ok("Typed it on the TV.");
             }
+            case "cast" -> cast(tv, rest);
             case "youtube", "play" -> {
                 if (rest.isEmpty()) throw new IllegalArgumentException("Play what?");
                 YouTube.Video video = tv.youtube(String.join(" ", rest));
@@ -214,6 +219,19 @@ public final class Cli {
                 throw new IllegalArgumentException("I don't know \"" + command + "\". Try jungey-tv help.");
             }
         };
+    }
+
+    /**
+     * cast [--no-sound]: this computer on the TV until it stops there or this is ended with
+     * Ctrl+C, which puts the sound back on the way out.
+     */
+    private static Outcome cast(SamsungTv tv, List<String> rest) throws TvException {
+        CompletableFuture<String> ended = new CompletableFuture<>();
+        try (ScreenCast ignored = tv.cast(!rest.contains("--no-sound"), ended::complete)) {
+            // stdout carries the answer alone; this is for whoever is watching the terminal.
+            System.err.println("Casting this computer to the TV. Press Ctrl+C to stop.");
+            return Outcome.ok(ended.join());
+        }
     }
 
     /** search youtube [--filter F] WORDS, or search WORDS for movies and shows. */

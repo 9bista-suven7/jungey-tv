@@ -30,7 +30,6 @@ public final class SamsungTv implements AutoCloseable {
 
     private final TvSettings settings;
     private Remote remote;
-    private volatile Consumer<String> tap;
     /** The TV's apps as last listed; they change only when something is installed. */
     private volatile List<Remote.App> installed;
 
@@ -163,12 +162,6 @@ public final class SamsungTv implements AutoCloseable {
         return installed;
     }
 
-    /** Hear what the TV says of its own accord, such as its keyboard opening. */
-    public void onEvent(Consumer<String> tap) {
-        this.tap = tap;
-        if (remote != null) remote.onEvent(tap);
-    }
-
     /** Open the installed app whose name best matches, turning the TV on first if need be. */
     public Remote.App open(String name) throws TvException {
         turnOn();
@@ -269,6 +262,15 @@ public final class SamsungTv implements AutoCloseable {
                 : " is not on " + wanted.name()) + ".");
     }
 
+    /**
+     * Show this computer's screen, and its sound, on the TV - turning the TV on first if need
+     * be - until the cast is closed or the TV stops it; {@code ended} hears why if the TV did.
+     */
+    public ScreenCast cast(boolean soundOnTv, Consumer<String> ended) throws TvException {
+        turnOn();
+        return ScreenCast.start(settings.host, soundOnTv, ended);
+    }
+
     /** Type into the TV's on-screen keyboard, when an app has it open. */
     public void type(String text) throws TvException {
         requireOn();
@@ -327,7 +329,6 @@ public final class SamsungTv implements AutoCloseable {
         for (int attempt = 0; ; attempt++) {
             if (remote == null || !remote.isOpen()) {
                 remote = Remote.open(settings, CONNECT_WAIT);
-                if (tap != null) remote.onEvent(tap);
             }
             try {
                 return action.run(remote);

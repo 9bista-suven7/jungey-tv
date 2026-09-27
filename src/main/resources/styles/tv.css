@@ -291,7 +291,7 @@
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.45), 6, 0, 0, 1);
 }
 
-/* ---------- youtube ---------- */
+/* ---------- youtube mark ---------- */
 
 .yt-mark {
     -fx-background-color: #ff2d2d;
@@ -301,46 +301,64 @@
 
 .yt-mark .icon-solid { -fx-fill: white; }
 
-.thumb-frame {
-    -fx-background-color: linear-gradient(to bottom right, #3a0a10, #12060a 60%, #0a0a12);
-    -fx-background-radius: 14;
+/* ---------- cast ---------- */
+
+.cast-screen:on {
+    -fx-background-color: linear-gradient(to bottom right, #ff4d5e, #a13bff 55%, #1dc8ff);
+    -fx-effect: dropshadow(gaussian, rgba(255, 77, 94, 0.5), 32, 0.2, 0, 0);
 }
 
-.thumb-play .icon-solid {
-    -fx-fill: rgba(255, 255, 255, 0.92);
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.6), 12, 0.2, 0, 2);
-}
+.cast-glyph .icon-line { -fx-stroke: rgba(210, 225, 240, 0.35); -fx-stroke-width: 1.8; }
+.cast-screen:on .cast-glyph .icon-line { -fx-stroke: white; }
 
-.now-title {
-    -fx-font-size: 14px;
+.cast-state {
+    -fx-text-fill: rgba(190, 210, 230, 0.55);
+    -fx-font-size: 12px;
     -fx-font-weight: bold;
-    -fx-text-fill: #f2fbff;
 }
 
-.search {
-    -fx-background-color: rgba(255, 255, 255, 0.06);
-    -fx-border-color: rgba(255, 255, 255, 0.1);
-    -fx-background-radius: 14;
-    -fx-border-radius: 14;
+.cast-screen:on .cast-state {
+    -fx-text-fill: white;
+    -fx-font-size: 13px;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.5), 6, 0.2, 0, 1);
+}
+
+.cast-about {
+    -fx-text-fill: #d2e9f1;
+    -fx-font-size: 13px;
+}
+
+.cast-option {
     -fx-text-fill: #eaf8fd;
-    -fx-prompt-text-fill: rgba(170, 200, 220, 0.45);
-    -fx-highlight-fill: rgba(255, 77, 94, 0.4);
-    -fx-padding: 11 14 11 14;
+    -fx-font-weight: bold;
 }
 
-.search:focused { -fx-border-color: rgba(255, 77, 94, 0.7); }
+.switch:disabled { -fx-opacity: 0.45; }
 
-.yt-play {
+.cast-button {
     -fx-background-color: linear-gradient(to bottom, #ff4747, #d10000);
     -fx-border-color: rgba(255, 140, 140, 0.6);
     -fx-text-fill: white;
     -fx-font-weight: bold;
-    -fx-min-height: 44;
+    -fx-min-height: 46;
     -fx-effect: dropshadow(gaussian, rgba(255, 45, 45, 0.4), 16, 0.2, 0, 3);
 }
 
-.yt-play:hover { -fx-background-color: linear-gradient(to bottom, #ff6464, #e60000); }
-.yt-play .icon-solid { -fx-fill: white; }
+.cast-button:hover { -fx-background-color: linear-gradient(to bottom, #ff6464, #e60000); }
+.cast-button .icon-line { -fx-stroke: white; }
+
+.cast-button:on {
+    -fx-background-color: rgba(255, 255, 255, 0.08);
+    -fx-border-color: rgba(255, 140, 140, 0.55);
+    -fx-text-fill: #ffc9cf;
+    -fx-effect: null;
+}
+
+.cast-button:on:hover { -fx-background-color: rgba(255, 77, 94, 0.18); }
+.cast-button:on .icon-line { -fx-stroke: #ff8b96; }
+.cast-button:disabled { -fx-opacity: 0.6; }
+
+.badge.accent-red .icon-line { -fx-stroke: #ff8b96; }
 
 /* ---------- apps ---------- */
 
@@ -415,7 +433,7 @@
     -fx-background-radius: 8;
 }
 
-/* ---------- search everywhere (top bar) ---------- */
+/* ---------- searching YouTube (top bar) ---------- */
 
 .everywhere {
     -fx-background-color: rgba(255, 255, 255, 0.07);
@@ -434,28 +452,6 @@
     -fx-effect: dropshadow(gaussian, rgba(56, 232, 255, 0.35), 16, 0.1, 0, 0);
 }
 
-.icon-line.search-glass { -fx-stroke: rgba(170, 220, 240, 0.7); }
-
-/* ---------- typing on the TV ---------- */
-
-.typing {
-    -fx-background-color: rgba(255, 255, 255, 0.06);
-    -fx-border-color: rgba(255, 255, 255, 0.1);
-    -fx-background-radius: 14;
-    -fx-border-radius: 14;
-    -fx-text-fill: #eaf8fd;
-    -fx-prompt-text-fill: rgba(170, 200, 220, 0.45);
-    -fx-highlight-fill: rgba(56, 232, 255, 0.35);
-    -fx-padding: 10 12 10 12;
-}
-
-.typing:focused { -fx-border-color: #38e8ff; }
-
-.send {
-    -fx-min-width: 46; -fx-min-height: 42;
-}
-
-.send .icon-line { -fx-stroke: #38e8ff; }
 
 /* ---------- the search sheet ---------- */
 
@@ -500,26 +496,13 @@
     -fx-padding: 12 22 12 22;
 }
 
-.tab-button {
-    -fx-background-color: transparent;
-    -fx-border-color: transparent;
-    -fx-background-radius: 20;
-    -fx-border-radius: 20;
-    -fx-text-fill: rgba(200, 225, 240, 0.7);
-    -fx-font-size: 14px;
-    -fx-font-weight: bold;
-    -fx-padding: 9 16 9 14;
-}
-
-.tab-button:hover { -fx-background-color: rgba(255, 255, 255, 0.06); }
-
-.tab-button:selected {
-    -fx-background-color: rgba(255, 255, 255, 0.1);
-    -fx-border-color: rgba(120, 220, 255, 0.4);
+.sheet-heading {
     -fx-text-fill: #f2fbff;
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-graphic-text-gap: 10;
+    -fx-padding: 0 0 0 4;
 }
-
-.tab-button .icon-line { -fx-stroke: #ffc94a; }
 
 .filter-chip {
     -fx-background-radius: 16;
@@ -632,60 +615,27 @@
     -fx-font-weight: bold;
 }
 
-/* ---------- movies and shows ---------- */
+/* ---------- the TV's remote, beside the results ---------- */
 
-.poster {
-    -fx-cursor: hand;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.55), 18, 0.1, 0, 6);
+.remote-panel {
+    -fx-background-color: linear-gradient(to bottom, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.025));
+    -fx-background-radius: 20;
+    -fx-border-color: rgba(120, 200, 255, 0.13);
+    -fx-border-radius: 20;
+    -fx-padding: 16;
 }
 
-.poster:hover {
-    -fx-effect: dropshadow(gaussian, rgba(120, 220, 255, 0.5), 22, 0.2, 0, 4);
-}
-
-.poster-initials {
-    -fx-text-fill: rgba(255, 255, 255, 0.9);
-    -fx-font-size: 36px;
+.now-title {
+    -fx-font-size: 13px;
     -fx-font-weight: bold;
-}
-
-.kind-badge {
-    -fx-background-color: rgba(0, 0, 0, 0.72);
-    -fx-background-radius: 6;
     -fx-text-fill: #f2fbff;
-    -fx-font-size: 9.5px;
-    -fx-font-weight: bold;
-    -fx-padding: 2 6 2 6;
 }
 
-.poster-title {
-    -fx-text-fill: #f2fbff;
-    -fx-font-size: 13.5px;
-    -fx-font-weight: bold;
+.remote-panel .key {
+    -fx-min-width: 50; -fx-min-height: 46;
 }
 
-.service-chip {
-    -fx-background-radius: 12;
-    -fx-border-color: rgba(255, 255, 255, 0.18);
-    -fx-border-radius: 12;
-    -fx-text-fill: white;
-    -fx-font-size: 11.5px;
-    -fx-font-weight: bold;
-    -fx-padding: 5 10 5 10;
-}
-
-.service-chip:hover {
-    -fx-border-color: white;
-    -fx-scale-x: 1.04;
-    -fx-scale-y: 1.04;
-}
-
-.also-on {
-    -fx-text-fill: rgba(170, 200, 220, 0.55);
-    -fx-font-size: 11px;
-}
-
-.attribution {
-    -fx-text-fill: rgba(150, 185, 205, 0.45);
-    -fx-font-size: 11px;
+.mini-key {
+    -fx-min-width: 36; -fx-min-height: 34;
+    -fx-padding: 6;
 }

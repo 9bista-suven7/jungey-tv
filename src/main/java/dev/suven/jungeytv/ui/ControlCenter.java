@@ -1,15 +1,18 @@
 package dev.suven.jungeytv.ui;
 
-import dev.suven.jungeytv.tv.Catalog;
 import dev.suven.jungeytv.tv.Remote;
 import dev.suven.jungeytv.tv.SamsungTv;
+import dev.suven.jungeytv.tv.ScreenCast;
 import dev.suven.jungeytv.tv.TvException;
 import dev.suven.jungeytv.tv.TvInfo;
 import dev.suven.jungeytv.tv.TvSettings;
 import dev.suven.jungeytv.tv.YouTube;
+import javafx.animation.Animation;
 import javafx.animation.FadeTransition;
+import javafx.animation.KeyFrame;
 import javafx.animation.PauseTransition;
 import javafx.animation.SequentialTransition;
+import javafx.animation.Timeline;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.css.PseudoClass;
@@ -21,6 +24,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextInputControl;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
@@ -34,7 +38,6 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.TilePane;
 import javafx.scene.layout.VBox;
-import javafx.scene.shape.Rectangle;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
@@ -48,8 +51,8 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Jungey TV's window: a control centre for the TV, every part of it on one screen as a
- * card - the TV and its power, sound, what is playing, inputs, getting around its menus,
- * and its apps.
+ * card - the TV and its power, sound, casting this computer to it, inputs, getting around
+ * its menus, and its apps. YouTube is searched from the bar at the top.
  *
  * <p>Every action goes to one worker thread in the order it was made, over a connection
  * kept open while the window is, so it answers as fast as the TV does. The state is read
@@ -86,26 +89,28 @@ public final class ControlCenter extends Application {
     private final Label powerLabel = new Label("Off");
     private final TilePane appTiles = new TilePane(14, 16);
     private final TextField search = new TextField();
-    private final TextField everywhere = new TextField();
-    private final TextField typing = new TextField();
     private final SearchSheet sheet = new SearchSheet(new SheetHost());
-    private final Label nowWhere = new Label("");
     private Node page;
-    private final ImageView thumbnail = new ImageView();
-    private final Label nowTitle = new Label("Nothing yet - search for anything below.");
     private final Label toast = new Label();
+    private final StackPane castScreen = new StackPane();
+    private final Label castState = new Label("Not casting");
+    private final Button castButton = new Button("Start casting");
+    private final StackPane castSoundSwitch = new StackPane();
+    private final Timeline castClock = new Timeline(new KeyFrame(Duration.seconds(1), e -> showCastTime()));
 
     private String power = "off";
     private List<Remote.App> apps = List.of();
     private boolean allApps;
+    /** The cast while it is on; only the window's thread touches it. */
+    private ScreenCast cast;
+    private boolean castStarting;
+    private boolean castSound = true;
 
-    /** A search to show as soon as the window opens - {@code jungey-tv browse WORDS}. */
+    /** A YouTube search to show as soon as the window opens - {@code jungey-tv browse WORDS}. */
     private static String startSearch;
-    private static boolean startWithVideos;
 
-    public static void startWith(String words, boolean videos) {
+    public static void startWith(String words) {
         startSearch = words;
-        startWithVideos = videos;
     }
 
     public static void main(String[] args) {
@@ -131,7 +136,7 @@ public final class ControlCenter extends Application {
         }
         grid.add(tvCard(), 0, 0);
         grid.add(soundCard(), 1, 0);
-        grid.add(youtubeCard(), 2, 0, 1, 2);
+        grid.add(castCard(), 2, 0, 1, 2);
         grid.add(inputsCard(), 0, 1);
         grid.add(navigateCard(), 1, 1);
         grid.add(appsCard(), 0, 2, 3, 1);
@@ -171,24 +176,15 @@ public final class ControlCenter extends Application {
 
         showPower("off");
         showPaired();
-        // The TV opened its keyboard - a search box in Netflix, say: type it here instead.
-        tv.onEvent(event -> {
-            if (event.startsWith("ms.remote.imeStart")) {
-                Platform.runLater(() -> {
-                    typing.requestFocus();
-                    say("The TV is asking for text. Type it here and press Enter.");
-                });
-            }
-        });
         watcher.scheduleWithFixedDelay(this::refresh, 0, 4, TimeUnit.SECONDS);
         if (settings.paired()) loadApps();
-        if (startSearch != null && !startSearch.isBlank()) {
-            sheet.open(startSearch, startWithVideos ? SearchSheet.Tab.YOUTUBE : SearchSheet.Tab.STREAMING);
-        }
+        if (startSearch != null && !startSearch.isBlank()) sheet.open(startSearch);
     }
 
     @Override
     public void stop() {
+        castClock.stop();
+        if (cast != null) cast.close();
         watcher.shutdownNow();
         worker.shutdownNow();
         tv.close();
@@ -222,19 +218,14 @@ public final class ControlCenter extends Application {
             return "Paired with the " + settings.spokenName() + ".";
         }));
 
-        everywhere.setPromptText("Search YouTube, movies and shows");
-        everywhere.getStyleClass().add("everywhere");
-        everywhere.setOnAction(e -> {
-            String text = everywhere.getText() == null ? "" : everywhere.getText().trim();
-            if (text.isEmpty()) return;
-            sheet.open(text, SearchSheet.Tab.STREAMING);
-            everywhere.clear();
-        });
-        Node glass = Icons.line(Icons.SEARCH, 17);
-        glass.setMouseTransparent(true);
-        StackPane find = new StackPane(everywhere, glass);
-        StackPane.setAlignment(glass, Pos.CENTER_LEFT);
-        StackPane.setMargin(glass, new Insets(0, 0, 0, 16));
+        search.setPromptText("Search YouTube, or paste a link");
+        search.getStyleClass().add("everywhere");
+        search.setOnAction(e -> searchYouTube());
+        Node mark = youtubeMark();
+        mark.setMouseTransparent(true);
+        StackPane find = new StackPane(search, mark);
+        StackPane.setAlignment(mark, Pos.CENTER_LEFT);
+        StackPane.setMargin(mark, new Insets(0, 0, 0, 14));
         find.setMaxWidth(420);
         find.setPrefWidth(420);
         HBox.setHgrow(find, Priority.SOMETIMES);
@@ -328,51 +319,60 @@ public final class ControlCenter extends Application {
         return card("Sound", Icons.solid(Icons.SPEAKER, 16), "accent-violet", new VBox(22, steppers, row));
     }
 
-    private Node youtubeCard() {
-        StackPane frame = new StackPane();
-        frame.getStyleClass().add("thumb-frame");
-        thumbnail.setPreserveRatio(true);
-        thumbnail.setFitWidth(300);
-        Rectangle clip = new Rectangle();
-        clip.setArcWidth(20);
-        clip.setArcHeight(20);
-        clip.widthProperty().bind(frame.widthProperty());
-        clip.heightProperty().bind(frame.heightProperty());
-        frame.setClip(clip);
-        Node bigPlay = Icons.solid(Icons.PLAY, 44);
-        bigPlay.getStyleClass().add("thumb-play");
-        frame.getChildren().addAll(thumbnail, bigPlay);
-        frame.setMinHeight(170);
-        frame.setPrefHeight(170);
+    /** This computer on the TV: its screen, and its sound unless that is switched off. */
+    private Node castCard() {
+        Node glyph = Icons.line(Icons.CAST, 40);
+        glyph.getStyleClass().add("cast-glyph");
+        castState.getStyleClass().add("cast-state");
+        VBox middle = new VBox(10, glyph, castState);
+        middle.setAlignment(Pos.CENTER);
+        Region glare = new Region();
+        glare.getStyleClass().add("screen-glare");
+        glare.setMouseTransparent(true);
+        castScreen.getChildren().addAll(glare, middle);
+        castScreen.getStyleClass().addAll("screen", "cast-screen");
+        castScreen.setMinHeight(170);
+        castScreen.setPrefHeight(170);
+        castClock.setCycleCount(Animation.INDEFINITE);
 
-        Label now = new Label("NOW PLAYING");
-        now.getStyleClass().add("eyebrow");
-        nowTitle.getStyleClass().add("now-title");
-        nowTitle.setWrapText(true);
+        Label about = new Label("This computer's screen and sound on the TV, like an HDMI cable without the cable.");
+        about.getStyleClass().add("cast-about");
+        about.setWrapText(true);
 
-        search.setPromptText("Search YouTube, or paste a link");
-        search.getStyleClass().add("search");
-        Button play = new Button("Search YouTube");
-        play.setGraphic(Icons.line(Icons.SEARCH, 15));
-        play.getStyleClass().add("yt-play");
-        play.setFocusTraversable(false);
-        play.setOnAction(e -> searchYouTube());
-        search.setOnAction(e -> searchYouTube());
-        HBox.setHgrow(search, Priority.ALWAYS);
-        VBox controls = new VBox(10, search, play);
-        play.setMaxWidth(Double.MAX_VALUE);
+        Region knob = new Region();
+        knob.getStyleClass().add("knob");
+        castSoundSwitch.getChildren().add(knob);
+        castSoundSwitch.getStyleClass().add("switch");
+        castSoundSwitch.setMaxSize(58, 32);
+        castSoundSwitch.setMinSize(58, 32);
+        castSoundSwitch.setOnMouseClicked(e -> {
+            if (cast != null || castStarting) return;
+            castSound = !castSound;
+            showCastSound();
+        });
+        Tooltip.install(castSoundSwitch, new Tooltip("On: the sound plays on the TV only. Off: on this computer too, a moment ahead."));
+        Label soundLabel = new Label("Sound on the TV");
+        soundLabel.getStyleClass().add("cast-option");
+        Region gap = new Region();
+        HBox.setHgrow(gap, Priority.ALWAYS);
+        HBox sound = new HBox(12, soundLabel, gap, castSoundSwitch);
+        sound.setAlignment(Pos.CENTER_LEFT);
+        showCastSound();
 
-        HBox transport = grow(new HBox(10,
-                key(Icons.solid(Icons.REWIND, 20), "rewind", "Rewind"),
-                key(Icons.solid(Icons.PLAY, 20), "play", "Play"),
-                key(Icons.solid(Icons.PAUSE, 20), "pause", "Pause"),
-                key(Icons.solid(Icons.FORWARD, 20), "forward", "Fast forward")));
+        castButton.setGraphic(Icons.line(Icons.CAST, 17));
+        castButton.getStyleClass().add("cast-button");
+        castButton.setFocusTraversable(false);
+        castButton.setMaxWidth(Double.MAX_VALUE);
+        castButton.setOnAction(e -> toggleCast());
 
-        nowWhere.getStyleClass().add("muted");
+        Label tip = new Label("Playing a film in the browser? Press F11 for full screen, and the TV shows just the film.");
+        tip.getStyleClass().add("muted");
+        tip.setWrapText(true);
+
         Region grow = new Region();
         VBox.setVgrow(grow, Priority.ALWAYS);
-        VBox body = new VBox(12, frame, now, nowTitle, nowWhere, grow, transport, controls);
-        return card("YouTube", youtubeMark(), "accent-red", body);
+        VBox body = new VBox(14, castScreen, about, sound, grow, tip, castButton);
+        return card("Cast", Icons.line(Icons.CAST, 16), "accent-red", body);
     }
 
     private Node inputsCard() {
@@ -407,29 +407,12 @@ public final class ControlCenter extends Application {
         Button home = action(Icons.line(Icons.HOME, 18), "Home", "tile-wide", pressing("home", null));
         HBox row = grow(new HBox(10, back, home));
 
-        // Typing into the TV's own keyboard: search inside Netflix, Prime Video, anything.
-        typing.setPromptText("Type on the TV…");
-        typing.getStyleClass().add("typing");
-        HBox.setHgrow(typing, Priority.ALWAYS);
-        Button send = new Button();
-        send.setGraphic(Icons.line(Icons.KEYBOARD, 18));
-        send.getStyleClass().add("send");
-        send.setFocusTraversable(false);
-        send.setTooltip(new Tooltip("Type this into the TV's keyboard, when an app has it open"));
-        Runnable type = () -> {
-            String text = typing.getText();
-            if (text == null || text.isBlank()) return;
-            typing.clear();
-            run(() -> {
-                tv.type(text);
-                return "Typed \"" + text + "\" on the TV.";
-            });
-        };
-        typing.setOnAction(e -> type.run());
-        send.setOnAction(e -> type.run());
-        HBox typeRow = new HBox(8, typing, send);
-        typeRow.setAlignment(Pos.CENTER_LEFT);
-        return card("Navigate", Icons.line(Icons.UP, 16), "accent-cyan", new VBox(14, pad, row, typeRow));
+        HBox transport = grow(new HBox(10,
+                key(Icons.solid(Icons.REWIND, 18), "rewind", "Rewind"),
+                key(Icons.solid(Icons.PLAY, 18), "play", "Play"),
+                key(Icons.solid(Icons.PAUSE, 18), "pause", "Pause"),
+                key(Icons.solid(Icons.FORWARD, 18), "forward", "Fast forward")));
+        return card("Navigate", Icons.line(Icons.UP, 16), "accent-cyan", new VBox(14, pad, row, transport));
     }
 
     private Node appsCard() {
@@ -526,13 +509,13 @@ public final class ControlCenter extends Application {
     private void searchYouTube() {
         String words = search.getText() == null ? "" : search.getText().trim();
         if (words.isEmpty()) {
-            say("Type something to search for first.");
+            say("Type something to search YouTube for first.");
             return;
         }
         if (YouTube.idFromLink(words).isPresent()) {
             playVideo(YouTube.Video.linked(YouTube.idFromLink(words).get()));
         } else {
-            sheet.open(words, SearchSheet.Tab.YOUTUBE);
+            sheet.open(words);
         }
         search.clear();
     }
@@ -540,28 +523,8 @@ public final class ControlCenter extends Application {
     private void playVideo(YouTube.Video video) {
         run(() -> {
             tv.play(video);
-            Platform.runLater(() -> showNowPlaying(video.largeThumbnail(),
-                    video.title() == null ? "A YouTube video" : AppTiles.label(video.title()),
-                    video.channel() == null ? "YouTube" : "YouTube  ·  " + video.channel()));
             return video.title() == null ? "Playing it on the TV." : "Playing " + video.title() + ".";
         });
-    }
-
-    private void watchTitle(Catalog.Title title, Catalog.Offer offer) {
-        run(() -> {
-            say("Opening " + title.name() + "…");
-            SamsungTv.Watching w = tv.watch(title, offer);
-            String app = w.app() == null ? offer.service() : AppTiles.shortName(w.app().name());
-            Platform.runLater(() -> showNowPlaying(title.poster(), title.name(), app));
-            return w.atTitle() ? "Opening " + title.name() + " in " + app + "."
-                    : "Opened " + app + ". Search for " + title.name() + " there - type it below the arrows.";
-        });
-    }
-
-    private void showNowPlaying(String image, String title, String where) {
-        thumbnail.setImage(image == null ? null : new Image(image, true));
-        nowTitle.setText(title);
-        nowWhere.setText(where);
     }
 
     /** What the search sheet asks of the window. */
@@ -572,13 +535,8 @@ public final class ControlCenter extends Application {
         }
 
         @Override
-        public void watch(Catalog.Title title, Catalog.Offer offer) {
-            watchTitle(title, offer);
-        }
-
-        @Override
-        public List<Remote.App> apps() {
-            return apps;
+        public void press(String button) {
+            run(pressing(button, null));
         }
 
         @Override
@@ -592,6 +550,85 @@ public final class ControlCenter extends Application {
         }
     }
 
+    // ------------------------------------------------------------------ casting
+
+    /** Which cast the window is showing; an older one's ending is not news. */
+    private int castRun;
+
+    private void toggleCast() {
+        if (castStarting) return;
+        castRun++;
+        if (cast != null) {
+            ScreenCast ending = cast;
+            cast = null;
+            showCast();
+            run(() -> {
+                ending.close();
+                return "Stopped casting.";
+            });
+            return;
+        }
+        castStarting = true;
+        showCast();
+        int mine = castRun;
+        boolean sound = castSound;
+        worker.submit(() -> {
+            try {
+                ScreenCast started = tv.cast(sound, why -> Platform.runLater(() -> {
+                    if (mine != castRun) return;
+                    cast = null;
+                    showCast();
+                    say(why);
+                }));
+                Platform.runLater(() -> {
+                    castStarting = false;
+                    cast = started;
+                    showCast();
+                });
+                say("Casting this computer to the TV. It shows there in a few seconds.");
+            } catch (TvException e) {
+                Platform.runLater(this::castFailed);
+                fail(e);
+            } catch (RuntimeException e) {
+                Platform.runLater(this::castFailed);
+                fail(new TvException(TvException.Problem.FAILED, String.valueOf(e.getMessage()), e));
+            }
+        });
+    }
+
+    private void castFailed() {
+        castStarting = false;
+        showCast();
+    }
+
+    private void showCast() {
+        boolean on = cast != null;
+        castScreen.pseudoClassStateChanged(ON, on);
+        castButton.pseudoClassStateChanged(ON, on);
+        castButton.setDisable(castStarting);
+        castButton.setText(castStarting ? "Starting…" : on ? "Stop casting" : "Start casting");
+        castSoundSwitch.setDisable(on || castStarting);
+        if (on) {
+            castClock.play();
+            showCastTime();
+        } else {
+            castClock.stop();
+            castState.setText(castStarting ? "Connecting to the TV…" : "Not casting");
+        }
+    }
+
+    private void showCastTime() {
+        if (cast == null) return;
+        long s = cast.elapsed().toSeconds();
+        String time = s >= 3600 ? "%d:%02d:%02d".formatted(s / 3600, s / 60 % 60, s % 60) : "%d:%02d".formatted(s / 60, s % 60);
+        castState.setText("On the TV  ·  " + time);
+    }
+
+    private void showCastSound() {
+        StackPane.setAlignment(castSoundSwitch.getChildren().getFirst(), castSound ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
+        castSoundSwitch.pseudoClassStateChanged(ON, castSound);
+    }
+
     private void loadApps() {
         worker.submit(() -> {
             try {
@@ -602,7 +639,6 @@ public final class ControlCenter extends Application {
                 Platform.runLater(() -> {
                     apps = found;
                     showApps();
-                    sheet.appsChanged();
                 });
             } catch (TvException e) {
                 if (e.problem() != TvException.Problem.OFF && e.problem() != TvException.Problem.UNREACHABLE) fail(e);
@@ -743,14 +779,13 @@ public final class ControlCenter extends Application {
     // ------------------------------------------------------------------ keyboard
 
     private void keyboard(KeyEvent e) {
-        if (sheet.isOpen()) {
-            if (e.getCode() == KeyCode.ESCAPE) {
-                e.consume();
-                sheet.close();
-            }
+        boolean typing = e.getTarget() instanceof TextInputControl;
+        if (e.getCode() == KeyCode.ESCAPE && sheet.isOpen()) {
+            e.consume();
+            sheet.close();
             return;
         }
-        if (search.isFocused() || everywhere.isFocused() || typing.isFocused()) {
+        if (typing) {
             if (e.getCode() == KeyCode.ESCAPE) page.requestFocus();
             return;
         }

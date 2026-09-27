@@ -183,4 +183,30 @@ class TvPartsTest {
         s.name = info.name();
         assertEquals("Samsung 7 Series", s.spokenName());
     }
+
+    @Test
+    void castingPieces() {
+        String description = """
+                <root><device><serviceList>
+                  <service><serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType>
+                    <controlURL>/upnp/control/RenderingControl1</controlURL></service>
+                  <service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
+                    <controlURL>/upnp/control/AVTransport1</controlURL></service>
+                </serviceList></device></root>""";
+        assertEquals("http://192.168.1.20:9197/upnp/control/AVTransport1",
+                MediaRenderer.controlUrl(description, "http://192.168.1.20:9197/dmr"));
+        assertNull(MediaRenderer.controlUrl("<!DOCTYPE x [<!ENTITY e SYSTEM \"file:///etc/passwd\">]><root>&e;</root>", "http://x/"));
+        assertTrue(MediaRenderer.didl("http://a/b.ts?x=1&y=2", "Tom & Jerry", "video/mp2t").contains("Tom &amp; Jerry"));
+
+        assertEquals(new ScreenCast.Area(1920, 0, 2560, 1440), ScreenCast.primary("""
+                Monitors: 2
+                 0: +eDP-1 1920/344x1080/193+0+0  eDP-1
+                 1: +*HDMI-1 2560/597x1440/336+1920+0  HDMI-1"""));
+        assertEquals(new ScreenCast.Area(0, 0, 1920, 1080), ScreenCast.primary(" 0: +eDP-1 1920/344x1080/193+0+0  eDP-1"));
+        assertNull(ScreenCast.primary("Monitors: 0"));
+        assertArrayEquals(new int[]{1920, 1080}, ScreenCast.outputSize(2560, 1440));
+        assertArrayEquals(new int[]{1366, 768}, ScreenCast.outputSize(1366, 768));
+        assertArrayEquals(new int[]{1728, 1080}, ScreenCast.outputSize(2880, 1800));
+        assertTrue(ScreenCast.ffmpeg(":0", null, null).stream().noneMatch(a -> a.equals("pulse")));
+    }
 }

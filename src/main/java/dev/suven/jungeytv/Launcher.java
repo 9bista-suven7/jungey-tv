@@ -3,7 +3,7 @@ package dev.suven.jungeytv;
 import dev.suven.jungeytv.ui.ControlCenter;
 
 /**
- * jungey-tv on its own opens the control center, and {@code browse WORDS} opens it at a search;
+ * jungey-tv on its own opens the control center, and {@code browse WORDS} opens it at a YouTube search;
  * with any other command it does that and exits.
  *
  * <p>Not an {@code Application} itself: a class that extends it cannot be the main class of
@@ -19,10 +19,10 @@ public final class Launcher {
             ControlCenter.main(new String[0]);
             return;
         }
-        // browse [youtube] WORDS: the window, opened at the results of a search.
+        // browse [youtube] WORDS: the window, opened at YouTube's results for them.
         if (args[0].equals("browse") && args.length > 1) {
-            boolean videos = args[1].equalsIgnoreCase("youtube") && args.length > 2;
-            ControlCenter.startWith(String.join(" ", java.util.Arrays.copyOfRange(args, videos ? 2 : 1, args.length)), videos);
+            boolean named = args[1].equalsIgnoreCase("youtube") && args.length > 2;
+            ControlCenter.startWith(String.join(" ", java.util.Arrays.copyOfRange(args, named ? 2 : 1, args.length)));
             ControlCenter.main(new String[0]);
             return;
         }

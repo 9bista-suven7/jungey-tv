@@ -25,6 +25,7 @@ The TV offers four different doors, and Jungey TV uses each for one job:
                                      opening apps and titles, typing
     8080   DIAL (HTTP)               playing a YouTube video            no
     9, 7   Wake-on-LAN (UDP)         waking the TV from standby         no
+    9197   DLNA media player (HTTP)  casting this computer's screen     no
 
 Two things on the internet are asked too, for searching - never the TV:
 
@@ -262,6 +263,21 @@ Turning ON depends on how asleep the TV is:
     Settings > General > Network > Expert Settings > Power On with Mobile
 
 
+STEP 10 - CASTING THIS COMPUTER   (ScreenCast.java, MediaRenderer.java, CastSound.java)
+-----------------------------------------------------------------------------------
+
+The TV has a DLNA media player (http://<tv>:9197/dmr) that plays any address it is given.
+  1. The sound moves to a silent output made for the cast (pactl), so it plays on the TV
+     only - the TV runs a second or two behind, and sound on both would echo.
+  2. A small web server starts on this computer, at an address with a random part, and
+     answers the TV's address only.
+  3. The TV is told to play it: SetAVTransportURI, then Play (SOAP, AVTransport).
+  4. When the TV asks, ffmpeg records the screen (x11grab) and that sound, and streams it
+     as H.264 and AAC in MPEG-TS, up to 1920x1080 at 30 frames a second.
+  5. Every two seconds the TV is asked whether it is still playing. Stop or Back on its
+     remote ends the cast; so does Stop casting. Either way the sound is put back.
+
+
 HOW JUNGEY USES IT   (Jungey: TvSkill.java)
 -------------------------------------------
 
@@ -317,11 +333,14 @@ THE CODE, FILE BY FILE   (apps/tv/src/main/java/dev/suven/jungeytv/)
     tv/Catalog.java        step 7: films and series, and where they stream
     tv/Services.java       step 7: services -> the TV's apps, and Netflix's deep link
     tv/WakeOnLan.java      step 9: the magic packet
+    tv/ScreenCast.java     step 10: recording the screen and handing it to the TV
+    tv/MediaRenderer.java  step 10: the TV's DLNA media player
+    tv/CastSound.java      step 10: moving the sound to the cast and back
     tv/SamsungTv.java      puts it all together: on, off, press, apps, open, youtube,
                            watch, type
     tv/TvSettings.java     ~/.config/jungey-tv/tv.json
     ui/ControlCenter.java  the window
-    ui/SearchSheet.java    the search screen: YouTube and Movies & shows tabs
+    ui/SearchSheet.java    the YouTube search screen, with the TV's remote beside it
 
 
 WHAT IT CANNOT DO (YET)
