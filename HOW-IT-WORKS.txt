@@ -22,9 +22,14 @@ The TV offers four different doors, and Jungey TV uses each for one job:
     1900   UPnP / SSDP (UDP)         finding the TV on the network      no
     8001   HTTP (plain)              asking the TV about itself         no
     8002   Secure WebSocket (wss)    pressing buttons, apps list,       yes - "Allow"
-                                     opening apps
+                                     opening apps and titles, typing
     8080   DIAL (HTTP)               playing a YouTube video            no
     9, 7   Wake-on-LAN (UDP)         waking the TV from standby         no
+
+Two things on the internet are asked too, for searching - never the TV:
+
+    www.youtube.com/youtubei/v1/search   YouTube's own search, as its website uses it
+    apis.justwatch.com/graphql           which films and series stream where
 
 
 STEP 1 - FINDING THE TV   (Discovery.java)
@@ -157,14 +162,30 @@ App names are matched loosely, so "prime" finds "Prime Video", "disney plus" fin
 "Disney+", and "netflix" finds "Netflix". If the TV is in standby it is turned on first.
 
 
-STEP 6 - PLAYING A YOUTUBE VIDEO   (YouTube.java)
--------------------------------------------------
+STEP 6 - SEARCHING AND PLAYING YOUTUBE   (YouTube.java)
+------------------------------------------------------
 
 Two parts:
 
-1. Finding the video. For words like "lofi hip hop", Jungey TV loads YouTube's own search
-   page (https://www.youtube.com/results?search_query=...) and reads the first video's ID
-   and title out of it. No Google account or API key. A pasted YouTube link skips this.
+1. Searching. Jungey TV asks the same service YouTube's website asks when you search:
+
+       POST https://www.youtube.com/youtubei/v1/search
+       {"context": {"client": {"clientName": "WEB", "clientVersion": "2.2025...", "gl": "US"}},
+        "query": "action movies",
+        "params": "EgIQBA=="}                        <- the Movies filter
+
+   The answer is JSON: about twenty results, each with its video ID, title, channel,
+   length, views, age and badges ("LIVE", "Free with ads"), and a "continuation" token.
+   Sending the token back ({"continuation": "..."}) gives the next twenty - that is the
+   "More results" button. No Google account or API key.
+
+   The filters are the website's own "sp" values:
+
+       Videos   EgIQAQ==      Movies   EgIQBA==      Live     EgJAAQ==
+       20+ min  EgIYAg==      Newest   CAI=
+
+   Thumbnails come from https://i.ytimg.com/vi/<id>/mqdefault.jpg (320 x 180).
+   "play X" with no choosing plays the first result; a pasted link skips the search.
 
 2. Playing it. This uses DIAL, the protocol a phone uses when you press "cast":
 
@@ -177,7 +198,55 @@ Two parts:
    https://i.ytimg.com/vi/<id>/hqdefault.jpg under "Now playing".
 
 
-STEP 7 - POWER   (SamsungTv.turnOn / turnOff, WakeOnLan.java)
+STEP 7 - FINDING MOVIES AND SHOWS IN YOUR APPS   (Catalog.java, Services.java)
+------------------------------------------------------------------------------
+
+Netflix, Prime Video and the others have no search anyone else can use, so Jungey TV
+asks JustWatch - the listings behind most "where to watch" sites - with the query its
+website uses:
+
+    POST https://apis.justwatch.com/graphql
+    popularTitles(country: "US", filter: {searchQuery: "the office"}) {
+        title, year, poster, offers { service, how (subscription/free/rent/buy), link } }
+
+Each offer is matched to an app on the TV (Services.java): "Amazon Prime Video" and
+"Amazon Video" to Prime Video, "Disney Plus" to Disney+, "Netflix Standard with Ads" to
+Netflix, channels sold through Prime Video to Prime Video, and so on. Disc shops and
+cable boxes are left out. The country comes from this computer's settings (en_US -> US),
+or "country" in tv.json.
+
+Opening a title, over the same WebSocket as opening an app (step 5):
+
+  - Netflix takes a title as a deep link:
+        {"method":"ms.channel.emit","params":{"event":"ed.apps.launch","to":"host",
+            "data":{"appId":"3201907018807","action_type":"DEEP_LINK",
+                    "metaTag":"m=http://api-global.netflix.com/catalog/titles/movies/80057281&source_type=4"}}}
+    The number is the title's ID from its netflix.com/title/... link. If the Netflix app
+    ignores it, Netflix simply opens at its home screen.
+  - A YouTube offer (films YouTube rents or shows free) is a video, and plays by DIAL.
+  - Every other app opens at its home screen: they do not accept a title from outside.
+    Then the title's name can be typed into the app's search (step 8).
+
+
+STEP 8 - TYPING ON THE TV   (Remote.text)
+-----------------------------------------
+
+When an app puts the TV's on-screen keyboard up - Netflix's search, a login box - the TV
+says so on the WebSocket:
+
+    {"event":"ms.remote.imeStart", ...}
+
+The window hears this and puts the cursor in its "Type on the TV" box. Whatever is typed
+there is sent as text, and then "done":
+
+    {"method":"ms.remote.control","params":{"Cmd":"<the text, Base64>",
+        "DataOfCmd":"base64","TypeOfRemote":"SendInputString"}}
+    {"method":"ms.remote.control","params":{"TypeOfRemote":"SendInputEnd"}}
+
+With no keyboard open on the TV, the text goes nowhere.
+
+
+STEP 9 - POWER   (SamsungTv.turnOn / turnOff, WakeOnLan.java)
 ------------------------------------------------------------
 
 Turning OFF:  if the TV says it is "on", send KEY_POWER over the WebSocket.
@@ -200,6 +269,11 @@ Jungey does not talk to the TV itself. When a sentence mentions the TV, Jungey's
 turns it into a jungey-tv command, runs it, and says the answer:
 
     "open Netflix on the TV"             ->  jungey-tv --json open netflix
+    "watch Stranger Things on Netflix"   ->  jungey-tv --json watch stranger things on netflix
+    "search YouTube for lofi on the TV"  ->  jungey-tv --json search youtube lofi
+    "play number two"   (after that)     ->  jungey-tv --json youtube https://youtu.be/<its id>
+    "show them"         (after that)     ->  jungey-tv browse youtube lofi   (the window)
+    "type friends on the TV"             ->  jungey-tv --json type friends
     "play lofi on YouTube on the TV"     ->  jungey-tv --json youtube lofi
     "TV volume down by 5"                ->  jungey-tv --json volume down 5
     "switch the TV to HDMI 2"            ->  jungey-tv --json source hdmi2
@@ -219,6 +293,7 @@ WHERE THINGS ARE KEPT
 
 ~/.config/jungey-tv/tv.json   - readable by you only (permissions 600)
     host          the TV's address on the network
+    country       optional: which country's listings to search (e.g. "US")
     name, model   what the TV calls itself
     mac           its network card's address, for waking it
     token         the TV's permission, given when Allow was pressed
@@ -238,11 +313,15 @@ THE CODE, FILE BY FILE   (apps/tv/src/main/java/dev/suven/jungeytv/)
     tv/Remote.java         steps 3-5: the secure WebSocket - pairing, keys, apps
     tv/PinnedTrust.java    step 3: accepting only the TV's own certificate
     tv/Keys.java           step 4: button names -> KEY_ names
-    tv/YouTube.java        step 6: search, and playing over DIAL
-    tv/WakeOnLan.java      step 7: the magic packet
-    tv/SamsungTv.java      puts it all together: on, off, press, apps, open, youtube
+    tv/YouTube.java        step 6: search, filters, more results, and playing over DIAL
+    tv/Catalog.java        step 7: films and series, and where they stream
+    tv/Services.java       step 7: services -> the TV's apps, and Netflix's deep link
+    tv/WakeOnLan.java      step 9: the magic packet
+    tv/SamsungTv.java      puts it all together: on, off, press, apps, open, youtube,
+                           watch, type
     tv/TvSettings.java     ~/.config/jungey-tv/tv.json
     ui/ControlCenter.java  the window
+    ui/SearchSheet.java    the search screen: YouTube and Movies & shows tabs
 
 
 WHAT IT CANNOT DO (YET)
@@ -250,5 +329,8 @@ WHAT IT CANNOT DO (YET)
 
   - Read or set the exact volume level - the remote channel only has up/down buttons.
   - Know which app or channel is showing right now.
-  - Search inside Netflix or Prime Video - it can only open them.
+  - Open a title inside Prime Video, Disney+, Hulu and the rest - it opens the app, and the
+    title's name can then be typed into its search from the window.
+  - Search inside the TV's apps' own catalogues - the listings are JustWatch's, which can
+    lag a day or two behind what an app has added.
   - Control Samsung TVs from before 2016, which use a different, older protocol.

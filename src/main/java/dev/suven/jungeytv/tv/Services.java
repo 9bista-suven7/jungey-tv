@@ -50,6 +50,10 @@ public final class Services {
     static String appName(String serviceId, String service) {
         String known = APP.get(serviceId);
         if (known != null) return known;
+        // Tiers and variants: "peacockpremiumplus", "netflixstandardwithads".
+        for (Map.Entry<String, String> e : APP.entrySet()) {
+            if (e.getKey().length() >= 5 && serviceId.startsWith(e.getKey())) return e.getValue();
+        }
         String both = (serviceId + " " + service).toLowerCase(java.util.Locale.ENGLISH);
         if (both.contains("amazonchannel") || both.contains("amazon channel")) return "prime video";
         if (both.contains("appletvchannel") || both.contains("apple tv channel")) return "apple tv";

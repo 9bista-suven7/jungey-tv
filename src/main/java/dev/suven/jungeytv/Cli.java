@@ -243,7 +243,11 @@ public final class Cli {
         }
         if (words.isEmpty()) throw new IllegalArgumentException("Search for what?");
         String query = String.join(" ", words);
-        List<Catalog.Title> titles = Catalog.search(query, country);
+        // Only streaming services people know - not disc shops, cable boxes or library apps.
+        List<Catalog.Title> titles = Catalog.search(query, country).stream()
+                .map(t -> new Catalog.Title(t.id(), t.kind(), t.name(), t.year(), t.poster(),
+                        t.offers().stream().filter(Services::known).toList()))
+                .toList();
         if (titles.isEmpty()) return new Outcome(false, "Nothing called " + query + " turned up.", "no_match", null);
         StringBuilder message = new StringBuilder("Movies and shows for " + query + ":");
         for (int i = 0; i < Math.min(10, titles.size()); i++) {
@@ -257,7 +261,7 @@ public final class Cli {
 
     /** " - Netflix, Prime Video to rent", from the streaming services only. */
     private static String where(Catalog.Title t) {
-        List<String> services = t.offers().stream().filter(Services::known).limit(4)
+        List<String> services = t.offers().stream().limit(4)
                 .map(o -> o.service() + (o.included() ? "" : " to " + o.type())).toList();
         return services.isEmpty() ? " - not streaming" : " - " + String.join(", ", services);
     }
